@@ -193,19 +193,38 @@ class WixImageCropper extends HTMLElement {
         
         .crop-box {
           position: absolute;
-          border: 2px solid #fff;
-          box-shadow: 0 0 0 9999em rgba(0, 0, 0, 0.5);
+          border: 3px solid #0078d4;
+          box-shadow: 0 0 0 9999em rgba(0, 0, 0, 0.7);
+          pointer-events: none;
+          z-index: 10;
+        }
+        
+        /* Grid overlay inside crop box */
+        .crop-box::before {
+          content: '';
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background-image: 
+            linear-gradient(to right, rgba(255,255,255,0.2) 1px, transparent 1px),
+            linear-gradient(to bottom, rgba(255,255,255,0.2) 1px, transparent 1px);
+          background-size: 33.33% 33.33%;
           pointer-events: none;
         }
         
         .crop-handle {
-          width: 10px;
-          height: 10px;
+          width: 14px;
+          height: 14px;
           background-color: #fff;
-          border: 1px solid #0078d4;
+          border: 2px solid #0078d4;
           position: absolute;
           pointer-events: auto;
           cursor: nwse-resize;
+          border-radius: 50%;
+          z-index: 11;
+          box-shadow: 0 0 3px rgba(0,0,0,0.5);
         }
         
         .crop-handle.tl { top: -5px; left: -5px; cursor: nwse-resize; }
@@ -225,6 +244,21 @@ class WixImageCropper extends HTMLElement {
           bottom: 0;
           cursor: move;
           pointer-events: auto;
+          border: 1px dashed rgba(255,255,255,0.5);
+        }
+        
+        .crop-instruction {
+          position: absolute;
+          bottom: -30px;
+          left: 50%;
+          transform: translateX(-50%);
+          background-color: rgba(0,0,0,0.7);
+          color: white;
+          padding: 4px 10px;
+          border-radius: 4px;
+          font-size: 12px;
+          white-space: nowrap;
+          pointer-events: none;
         }
         
         .controls-panel {
@@ -370,6 +404,7 @@ class WixImageCropper extends HTMLElement {
                 <div class="crop-handle ml"></div>
                 <div class="crop-handle mr"></div>
                 <div class="center-box"></div>
+                <div class="crop-instruction">Drag to move, handles to resize</div>
               </div>
             </div>
           </div>
@@ -691,6 +726,49 @@ class WixImageCropper extends HTMLElement {
       });
     }
     
+    // Flag for first render animation
+    this.isFirstRender = true;
+    
+    // Add pulse animation to crop handles to draw attention to them
+    const cropHandles = this.shadowRoot.querySelectorAll('.crop-handle');
+    cropHandles.forEach(handle => {
+      handle.style.animation = 'pulse 2s infinite';
+    });
+    
+    // Add stylesheet for animations if it doesn't exist
+    if (!this.shadowRoot.querySelector('#cropper-animations')) {
+      const style = document.createElement('style');
+      style.id = 'cropper-animations';
+      style.textContent = `
+        @keyframes pulse {
+          0% { transform: scale(1); opacity: 1; }
+          50% { transform: scale(1.2); opacity: 0.8; }
+          100% { transform: scale(1); opacity: 1; }
+        }
+        
+        .crop-box {
+          transition: all 0.1s ease-out;
+        }
+        
+        .crop-handle {
+          transition: all 0.1s ease-out;
+        }
+        
+        .crop-handle:hover {
+          transform: scale(1.2);
+          background-color: #0078d4;
+        }
+      `;
+      this.shadowRoot.appendChild(style);
+    }
+    
+    // Show instruction tooltip for a few seconds
+    const cropInstruction = this.shadowRoot.querySelector('.crop-instruction');
+    cropInstruction.style.opacity = '1';
+    setTimeout(() => {
+      cropInstruction.style.opacity = '0.6';
+    }, 5000);
+    
     // Render the image and crop box
     this.renderImage();
   }
@@ -751,8 +829,44 @@ class WixImageCropper extends HTMLElement {
     // Restore the context state
     ctx.restore();
     
+    // Draw a subtle grid on the entire canvas for better size reference
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+    ctx.lineWidth = 1;
+    
+    // Vertical lines
+    for (let x = 0; x < canvas.width; x += 50) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, canvas.height);
+      ctx.stroke();
+    }
+    
+    // Horizontal lines
+    for (let y = 0; y < canvas.height; y += 50) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(canvas.width, y);
+      ctx.stroke();
+    }
+    
     // Update crop box position on canvas
     this.updateCropBox();
+    
+    // Highlight the crop area with an animation effect on initial render
+    if (this.isFirstRender) {
+      const cropBox = this.shadowRoot.querySelector('.crop-box');
+      cropBox.style.transition = 'all 0.3s ease';
+      cropBox.style.boxShadow = '0 0 0 9999em rgba(0, 0, 0, 0.3)';
+      
+      setTimeout(() => {
+        cropBox.style.boxShadow = '0 0 0 9999em rgba(0, 0, 0, 0.7)';
+        
+        setTimeout(() => {
+          cropBox.style.transition = 'none';
+          this.isFirstRender = false;
+        }, 300);
+      }, 100);
+    }
   }
 
   updateCropBox() {
@@ -996,9 +1110,74 @@ class WixImageCropper extends HTMLElement {
       0, 0, this.cropBox.width, this.cropBox.height
     );
     
+    // Show visual feedback - flash the crop area
+    const cropBox = this.shadowRoot.querySelector('.crop-box');
+    const originalBorder = cropBox.style.border;
+    cropBox.style.border = '3px solid #4CAF50';
+    
+    // Create temporary flash effect overlay
+    const flashOverlay = document.createElement('div');
+    flashOverlay.style.position = 'absolute';
+    flashOverlay.style.top = `${this.cropBox.y}px`;
+    flashOverlay.style.left = `${this.cropBox.x}px`;
+    flashOverlay.style.width = `${this.cropBox.width}px`;
+    flashOverlay.style.height = `${this.cropBox.height}px`;
+    flashOverlay.style.backgroundColor = 'rgba(255, 255, 255, 0.5)';
+    flashOverlay.style.transition = 'opacity 0.5s ease';
+    flashOverlay.style.zIndex = '20';
+    this.shadowRoot.querySelector('.canvas-container').appendChild(flashOverlay);
+    
+    // Animate the flash effect
+    setTimeout(() => {
+      flashOverlay.style.opacity = '0';
+      setTimeout(() => {
+        flashOverlay.remove();
+        cropBox.style.border = originalBorder;
+      }, 500);
+    }, 100);
+    
+    // Display a small preview of the cropped image for user feedback
+    const previewContainer = document.createElement('div');
+    previewContainer.style.position = 'absolute';
+    previewContainer.style.top = '20px';
+    previewContainer.style.right = '20px';
+    previewContainer.style.padding = '10px';
+    previewContainer.style.backgroundColor = 'white';
+    previewContainer.style.boxShadow = '0 2px 10px rgba(0,0,0,0.2)';
+    previewContainer.style.borderRadius = '4px';
+    previewContainer.style.zIndex = '100';
+    previewContainer.style.transition = 'opacity 0.5s ease';
+    
+    const previewLabel = document.createElement('div');
+    previewLabel.textContent = 'Cropped Preview';
+    previewLabel.style.fontSize = '12px';
+    previewLabel.style.marginBottom = '5px';
+    previewLabel.style.color = '#333';
+    
+    const previewImg = document.createElement('img');
+    previewImg.style.maxWidth = '150px';
+    previewImg.style.maxHeight = '100px';
+    previewImg.style.display = 'block';
+    
+    previewContainer.appendChild(previewLabel);
+    previewContainer.appendChild(previewImg);
+    
     // Get image data URL
     const quality = parseFloat(this.getAttribute('quality') || 0.92);
-    return croppedCanvas.toDataURL('image/jpeg', quality);
+    const dataURL = croppedCanvas.toDataURL('image/jpeg', quality);
+    
+    // Show preview briefly
+    previewImg.src = dataURL;
+    this.shadowRoot.querySelector('.cropper-workspace').appendChild(previewContainer);
+    
+    setTimeout(() => {
+      previewContainer.style.opacity = '0';
+      setTimeout(() => {
+        previewContainer.remove();
+      }, 500);
+    }, 2000);
+    
+    return dataURL;
   }
 
   downloadImage(dataURL) {
