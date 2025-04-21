@@ -1,1204 +1,1051 @@
 /**
- * Advanced Image Cropper - Wix Custom Element
- * Filename: wix-advanced-image-cropper.js
- * Custom Element Tag: <advanced-image-cropper>
+ * Advanced Image Cropper - Wix Studio Custom Element
  * 
- * A powerful image cropping tool built with Cropper.js
- * Properly formatted for Wix Custom Elements
+ * File: wix-image-cropper.js
+ * Custom Element Tag: <wix-image-cropper>
+ * 
+ * Features:
+ * - Image upload with drag and drop
+ * - Interactive cropping interface with resize/move
+ * - Multiple aspect ratio options
+ * - Rotation and flipping capabilities
+ * - Zoom functionality
+ * - Image filters and adjustments
+ * - Download cropped image
+ * - Mobile-friendly design
  */
-class AdvancedImageCropper extends HTMLElement {
+
+class WixImageCropper extends HTMLElement {
   constructor() {
     super();
-    this.cropper = null;
-    this.cropResult = null;
-    this.originalImage = null;
-    this.cropperLoaded = false;
-
-    // Initial configuration
-    this.cropperOptions = {
-      viewMode: 1,
-      dragMode: 'crop',
-      aspectRatio: NaN,
-      autoCropArea: 0.8,
-      restore: false,
-      guides: true,
-      center: true,
-      highlight: true,
-      cropBoxMovable: true,
-      cropBoxResizable: true,
-      toggleDragModeOnDblclick: true,
-      responsive: true,
-      wheelZoomRatio: 0.1,
-      minContainerWidth: 300,
-      minContainerHeight: 300
-    };
+    this.attachShadow({ mode: 'open' });
+    
+    // State variables
+    this.image = null;
+    this.cropBox = { x: 0, y: 0, width: 0, height: 0 };
+    this.dragStart = { x: 0, y: 0 };
+    this.isDragging = false;
+    this.isResizing = false;
+    this.resizeHandle = '';
+    this.scale = 1;
+    this.rotation = 0;
+    this.flipHorizontal = false;
+    this.flipVertical = false;
+    this.brightness = 100;
+    this.contrast = 100;
+    this.saturation = 100;
+    this.currentAspectRatio = null; // null = free form
+    
+    // Render the initial UI
+    this.render();
   }
 
   connectedCallback() {
-    // Add inline styles first to ensure Cropper.js UI is visible
-    this.addCropperStyles();
+    this.setupEventListeners();
     
-    // Render HTML structure
-    this.render();
-    
-    // Load Cropper.js and initialize event listeners
-    this.loadCropperLibrary()
-      .then(() => {
-        this.initEventListeners();
-      })
-      .catch(error => {
-        console.error('Failed to load Cropper.js:', error);
+    // Notify Wix Studio that the element is ready
+    if (window.wixDevelopmentSDK) {
+      window.wixDevelopmentSDK.elementReady({
+        name: 'wix-image-cropper',
+        properties: [
+          { name: 'maxWidth', type: 'number', defaultValue: 800 },
+          { name: 'maxHeight', type: 'number', defaultValue: 600 },
+          { name: 'allowedFileTypes', type: 'string', defaultValue: 'image/jpeg,image/png,image/gif' },
+          { name: 'maxFileSize', type: 'number', defaultValue: 5 }, // in MB
+          { name: 'defaultAspectRatio', type: 'string', defaultValue: 'free' },
+          { name: 'enableFilters', type: 'boolean', defaultValue: true },
+          { name: 'enableRotation', type: 'boolean', defaultValue: true },
+          { name: 'quality', type: 'number', defaultValue: 0.92 }
+        ],
+        events: [
+          { name: 'imageCropped', data: { imageData: 'string' } },
+          { name: 'cropCancelled' },
+          { name: 'error', data: { message: 'string' } }
+        ]
       });
-
-    // Register with Wix Editor
-    if (window.wixDevelopmentToolkit) {
-      window.wixDevelopmentToolkit.registerSchemaForEditor(this.getSchema());
     }
   }
 
   disconnectedCallback() {
-    if (this.cropper) {
-      this.cropper.destroy();
-      this.cropper = null;
-    }
+    this.removeEventListeners();
   }
 
-  getSchema() {
-    return {
-      properties: {
-        cropResult: {
-          type: 'string',
-          readOnly: true
-        },
-        aspectRatio: {
-          type: 'string',
-          editorOnly: true,
-          options: [
-            { value: 'NaN', label: 'Free' },
-            { value: '1', label: '1:1 (Square)' },
-            { value: '16/9', label: '16:9 (Landscape)' },
-            { value: '9/16', label: '9:16 (Portrait)' },
-            { value: '4/3', label: '4:3' },
-            { value: '3/4', label: '3:4' },
-            { value: '3/2', label: '3:2' },
-            { value: '2/3', label: '2:3' }
-          ]
-        },
-        guidelinesVisible: {
-          type: 'boolean',
-          editorOnly: true,
-          defaultValue: true
-        },
-        defaultDragMode: {
-          type: 'string',
-          editorOnly: true,
-          options: [
-            { value: 'crop', label: 'Crop' },
-            { value: 'move', label: 'Move' },
-            { value: 'none', label: 'None' }
-          ],
-          defaultValue: 'crop'
-        }
-      }
-    };
-  }
-
-  // Add Cropper.js styles directly to the document head
-  addCropperStyles() {
-    if (document.getElementById('advanced-cropper-styles')) {
-      return;
-    }
-
-    const style = document.createElement('style');
-    style.id = 'advanced-cropper-styles';
-    style.textContent = `
-      /* Cropper.js styles */
-      .cropper-container {
-        direction: ltr;
-        font-size: 0;
-        line-height: 0;
-        position: relative;
-        touch-action: none;
-        user-select: none;
-        -webkit-tap-highlight-color: transparent;
-        -webkit-touch-callout: none;
-        z-index: 10 !important;
-      }
-
-      .cropper-container img {
-        display: block;
-        height: 100%;
-        image-orientation: 0deg;
-        max-height: none !important;
-        max-width: none !important;
-        min-height: 0 !important;
-        min-width: 0 !important;
-        width: 100%;
-      }
-
-      .cropper-wrap-box,
-      .cropper-canvas,
-      .cropper-drag-box,
-      .cropper-crop-box,
-      .cropper-modal {
-        bottom: 0;
-        left: 0;
-        position: absolute;
-        right: 0;
-        top: 0;
-      }
-
-      .cropper-wrap-box,
-      .cropper-canvas {
-        overflow: hidden;
-      }
-
-      .cropper-drag-box {
-        background-color: #fff;
-        opacity: 0;
-      }
-
-      .cropper-modal {
-        background-color: #000;
-        opacity: 0.5;
-      }
-
-      .cropper-view-box {
-        display: block;
-        height: 100%;
-        outline: 1px solid #39f;
-        outline-color: rgba(51, 153, 255, 0.75);
-        overflow: hidden;
-        width: 100%;
-      }
-
-      .cropper-dashed {
-        border: 0 dashed #eee;
-        display: block;
-        opacity: 0.5;
-        position: absolute;
-      }
-
-      .cropper-dashed.dashed-h {
-        border-bottom-width: 1px;
-        border-top-width: 1px;
-        height: calc(100% / 3);
-        left: 0;
-        top: calc(100% / 3);
-        width: 100%;
-      }
-
-      .cropper-dashed.dashed-v {
-        border-left-width: 1px;
-        border-right-width: 1px;
-        height: 100%;
-        left: calc(100% / 3);
-        top: 0;
-        width: calc(100% / 3);
-      }
-
-      .cropper-center {
-        display: block;
-        height: 0;
-        left: 50%;
-        opacity: 0.75;
-        position: absolute;
-        top: 50%;
-        width: 0;
-      }
-
-      .cropper-center::before,
-      .cropper-center::after {
-        background-color: #eee;
-        content: ' ';
-        display: block;
-        position: absolute;
-      }
-
-      .cropper-center::before {
-        height: 1px;
-        left: -3px;
-        top: 0;
-        width: 7px;
-      }
-
-      .cropper-center::after {
-        height: 7px;
-        left: 0;
-        top: -3px;
-        width: 1px;
-      }
-
-      .cropper-face,
-      .cropper-line,
-      .cropper-point {
-        display: block;
-        height: 100%;
-        opacity: 0.1;
-        position: absolute;
-        width: 100%;
-      }
-
-      .cropper-face {
-        background-color: #fff;
-        left: 0;
-        top: 0;
-      }
-
-      .cropper-line {
-        background-color: #39f;
-      }
-
-      .cropper-line.line-e {
-        cursor: ew-resize;
-        right: -3px;
-        top: 0;
-        width: 5px;
-      }
-
-      .cropper-line.line-n {
-        cursor: ns-resize;
-        height: 5px;
-        left: 0;
-        top: -3px;
-      }
-
-      .cropper-line.line-w {
-        cursor: ew-resize;
-        left: -3px;
-        top: 0;
-        width: 5px;
-      }
-
-      .cropper-line.line-s {
-        bottom: -3px;
-        cursor: ns-resize;
-        height: 5px;
-        left: 0;
-      }
-
-      .cropper-point {
-        background-color: #39f;
-        height: 5px;
-        opacity: 0.75;
-        width: 5px;
-      }
-
-      .cropper-point.point-e {
-        cursor: ew-resize;
-        margin-top: -3px;
-        right: -3px;
-        top: 50%;
-      }
-
-      .cropper-point.point-n {
-        cursor: ns-resize;
-        left: 50%;
-        margin-left: -3px;
-        top: -3px;
-      }
-
-      .cropper-point.point-w {
-        cursor: ew-resize;
-        left: -3px;
-        margin-top: -3px;
-        top: 50%;
-      }
-
-      .cropper-point.point-s {
-        bottom: -3px;
-        cursor: s-resize;
-        left: 50%;
-        margin-left: -3px;
-      }
-
-      .cropper-point.point-ne {
-        cursor: nesw-resize;
-        right: -3px;
-        top: -3px;
-      }
-
-      .cropper-point.point-nw {
-        cursor: nwse-resize;
-        left: -3px;
-        top: -3px;
-      }
-
-      .cropper-point.point-sw {
-        bottom: -3px;
-        cursor: nesw-resize;
-        left: -3px;
-      }
-
-      .cropper-point.point-se {
-        bottom: -3px;
-        cursor: nwse-resize;
-        height: 20px;
-        opacity: 1;
-        right: -3px;
-        width: 20px;
-      }
-
-      @media (min-width: 768px) {
-        .cropper-point.point-se {
-          height: 15px;
-          width: 15px;
-        }
-      }
-
-      @media (min-width: 992px) {
-        .cropper-point.point-se {
-          height: 10px;
-          width: 10px;
-        }
-      }
-
-      @media (min-width: 1200px) {
-        .cropper-point.point-se {
-          height: 5px;
-          opacity: 0.75;
-          width: 5px;
-        }
-      }
-
-      .cropper-point.point-se::before {
-        background-color: #39f;
-        bottom: -50%;
-        content: ' ';
-        display: block;
-        height: 200%;
-        opacity: 0;
-        position: absolute;
-        right: -50%;
-        width: 200%;
-      }
-
-      .cropper-invisible {
-        opacity: 0;
-      }
-
-      .cropper-bg {
-        background-image: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQAQMAAAAlPW0iAAAAA3NCSVQICAjb4U/gAAAABlBMVEXMzMz////TjRV2AAAACXBIWXMAAArrAAAK6wGCiw1aAAAAHHRFWHRTb2Z0d2FyZQBBZG9iZSBGaXJld29ya3MgQ1M26LyyjAAAABFJREFUCJlj+M/AgBVhF/0PAH6/D/HkDxOGAAAAAElFTkSuQmCC');
-      }
-
-      .cropper-hide {
-        display: block;
-        height: 0;
-        position: absolute;
-        width: 0;
-      }
-
-      .cropper-hidden {
-        display: none !important;
-      }
-
-      .cropper-move {
-        cursor: move;
-      }
-
-      .cropper-crop {
-        cursor: crosshair;
-      }
-
-      .cropper-disabled .cropper-drag-box,
-      .cropper-disabled .cropper-face,
-      .cropper-disabled .cropper-line,
-      .cropper-disabled .cropper-point {
-        cursor: not-allowed;
-      }
-      
-      /* Component styles */
-      advanced-image-cropper {
-        display: block;
-        width: 100%;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      }
-      
-      .container {
-        display: flex;
-        flex-direction: column;
-        gap: 20px;
-        max-width: 100%;
-        padding: 20px;
-        border-radius: 12px;
-        background-color: #ffffff;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-      }
-      
-      .header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 10px;
-      }
-      
-      .title {
-        font-size: 20px;
-        font-weight: 600;
-        color: #333;
-        margin: 0;
-      }
-      
-      .upload-container {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-      }
-      
-      .upload-btn {
-        background-color: #3498db;
-        color: white;
-        padding: 10px 16px;
-        border-radius: 6px;
-        border: none;
-        cursor: pointer;
-        font-weight: 500;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        transition: background-color 0.2s;
-      }
-      
-      .upload-btn:hover {
-        background-color: #2980b9;
-      }
-      
-      .upload-icon {
-        width: 18px;
-        height: 18px;
-      }
-      
-      .file-input {
-        display: none;
-      }
-      
-      .img-container {
-        position: relative !important;
-        max-width: 100%;
-        height: 450px;
-        background-color: #f8f9fa;
-        border-radius: 8px;
-        overflow: hidden;
-        transition: height 0.3s;
-      }
-      
-      .img-element {
-        max-width: 100%;
-        max-height: 100%;
-      }
-      
-      .placeholder {
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        align-items: center;
-        height: 100%;
-        color: #adb5bd;
-        text-align: center;
-        padding: 20px;
-      }
-      
-      .placeholder-icon {
-        width: 64px;
-        height: 64px;
-        margin-bottom: 16px;
-        opacity: 0.5;
-      }
-      
-      .controls-container {
-        display: flex;
-        flex-direction: column;
-        gap: 16px;
-        margin-top: 10px;
-      }
-      
-      .control-group {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px;
-        padding: 15px;
-        background-color: #f8f9fa;
-        border-radius: 8px;
-      }
-      
-      .control-label {
-        width: 100%;
-        margin-bottom: 5px;
-        font-size: 14px;
-        font-weight: 600;
-        color: #495057;
-      }
-      
-      .btn {
-        padding: 8px 12px;
-        background-color: #f1f3f5;
-        border: 1px solid #ced4da;
-        border-radius: 6px;
-        color: #495057;
-        cursor: pointer;
-        font-size: 14px;
-        font-weight: 500;
-        transition: all 0.2s;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 5px;
-        min-width: 40px;
-      }
-      
-      .btn:hover {
-        background-color: #e9ecef;
-        border-color: #adb5bd;
-      }
-      
-      .btn.primary {
-        background-color: #3498db;
-        border-color: #3498db;
-        color: white;
-      }
-      
-      .btn.primary:hover {
-        background-color: #2980b9;
-        border-color: #2980b9;
-      }
-      
-      .btn.danger {
-        background-color: #e74c3c;
-        border-color: #e74c3c;
-        color: white;
-      }
-      
-      .btn.danger:hover {
-        background-color: #c0392b;
-        border-color: #c0392b;
-      }
-      
-      .btn.active {
-        background-color: #3498db;
-        border-color: #3498db;
-        color: white;
-      }
-      
-      .btn-icon {
-        width: 16px;
-        height: 16px;
-      }
-      
-      .slider-container {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        width: 100%;
-      }
-      
-      .slider-label {
-        min-width: 80px;
-        font-size: 14px;
-        color: #495057;
-      }
-      
-      .slider {
-        flex-grow: 1;
-        height: 5px;
-        -webkit-appearance: none;
-        background: #dee2e6;
-        border-radius: 5px;
-        outline: none;
-      }
-      
-      .slider::-webkit-slider-thumb {
-        -webkit-appearance: none;
-        width: 18px;
-        height: 18px;
-        border-radius: 50%;
-        background: #3498db;
-        cursor: pointer;
-        transition: background 0.2s;
-      }
-      
-      .slider::-moz-range-thumb {
-        width: 18px;
-        height: 18px;
-        border-radius: 50%;
-        background: #3498db;
-        cursor: pointer;
-        transition: background 0.2s;
-        border: none;
-      }
-      
-      .slider-value {
-        min-width: 40px;
-        text-align: center;
-        font-size: 14px;
-        color: #495057;
-      }
-      
-      .aspect-ratio-btn {
-        padding: 6px 12px;
-        border-radius: 6px;
-        background-color: #f1f3f5;
-        border: 1px solid #ced4da;
-        color: #495057;
-        cursor: pointer;
-        font-size: 14px;
-        transition: all 0.2s;
-      }
-      
-      .aspect-ratio-btn:hover,
-      .aspect-ratio-btn.active {
-        background-color: #3498db;
-        border-color: #3498db;
-        color: white;
-      }
-      
-      .crop-result {
-        margin-top: 20px;
-        text-align: center;
-      }
-      
-      .result-img {
-        max-width: 100%;
-        border-radius: 8px;
-        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
-      }
-      
-      @media (max-width: 768px) {
-        .control-group {
-          flex-direction: column;
-        }
-        
-        .img-container {
-          height: 350px;
-        }
-      }
-    `;
-    document.head.appendChild(style);
-  }
-
+  // Generate HTML structure with CSS
   render() {
-    this.innerHTML = `
-      <div class="container">
-        <div class="header">
-          <h2 class="title">Advanced Image Cropper</h2>
-          <div class="upload-container">
-            <button class="upload-btn" id="uploadBtn">
-              <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                <polyline points="17 8 12 3 7 8"></polyline>
-                <line x1="12" y1="3" x2="12" y2="15"></line>
-              </svg>
-              Upload Image
-            </button>
-            <input type="file" accept="image/*" class="file-input" id="fileInput">
-          </div>
-        </div>
+    this.shadowRoot.innerHTML = `
+      <style>
+        :host {
+          display: block;
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+          width: 100%;
+          height: 100%;
+          min-height: 400px;
+          box-sizing: border-box;
+        }
         
-        <div class="img-container" id="imgContainer">
-          <div class="placeholder" id="placeholder">
-            <svg class="placeholder-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-              <circle cx="8.5" cy="8.5" r="1.5"></circle>
-              <polyline points="21 15 16 10 5 21"></polyline>
-            </svg>
-            <p>Upload an image to start cropping</p>
-          </div>
-          <img id="image" class="img-element" style="display: none;">
-        </div>
+        * {
+          box-sizing: border-box;
+        }
         
-        <div class="controls-container" id="controlsContainer" style="display: none;">
-          <div class="control-group">
-            <div class="control-label">Aspect Ratio</div>
-            <button class="aspect-ratio-btn" data-ratio="NaN">Free</button>
-            <button class="aspect-ratio-btn" data-ratio="1">1:1</button>
-            <button class="aspect-ratio-btn" data-ratio="16/9">16:9</button>
-            <button class="aspect-ratio-btn" data-ratio="9/16">9:16</button>
-            <button class="aspect-ratio-btn" data-ratio="4/3">4:3</button>
-            <button class="aspect-ratio-btn" data-ratio="3/4">3:4</button>
-            <button class="aspect-ratio-btn" data-ratio="3/2">3:2</button>
-            <button class="aspect-ratio-btn" data-ratio="2/3">2:3</button>
-          </div>
+        .cropper-container {
+          width: 100%;
+          height: 100%;
+          display: flex;
+          flex-direction: column;
+          background-color: #f5f5f5;
+          border-radius: 8px;
+          overflow: hidden;
+        }
+        
+        .upload-area {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          border: 2px dashed #ccc;
+          border-radius: 8px;
+          margin: 20px;
+          padding: 20px;
+          text-align: center;
+          cursor: pointer;
+          transition: all 0.3s;
+        }
+        
+        .upload-area.drag-over {
+          background-color: rgba(0, 120, 212, 0.05);
+          border-color: #0078d4;
+        }
+        
+        .upload-area svg {
+          width: 48px;
+          height: 48px;
+          margin-bottom: 16px;
+          color: #666;
+        }
+        
+        .upload-area h3 {
+          margin: 0 0 8px 0;
+          color: #333;
+        }
+        
+        .upload-area p {
+          margin: 0;
+          color: #666;
+        }
+        
+        .upload-btn {
+          background-color: #0078d4;
+          color: white;
+          border: none;
+          padding: 8px 16px;
+          border-radius: 4px;
+          font-weight: 500;
+          margin-top: 16px;
+          cursor: pointer;
+          transition: background-color 0.3s;
+        }
+        
+        .upload-btn:hover {
+          background-color: #006cbe;
+        }
+        
+        .cropper-workspace {
+          display: none;
+          flex-direction: column;
+          height: 100%;
+        }
+        
+        .workspace-active .cropper-workspace {
+          display: flex;
+        }
+        
+        .workspace-active .upload-area {
+          display: none;
+        }
+        
+        .canvas-container {
+          flex: 1;
+          position: relative;
+          overflow: hidden;
+          background-color: #222;
+          margin: 0 20px;
+          border-radius: 8px;
+        }
+        
+        #cropCanvas {
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          max-width: 100%;
+          max-height: 100%;
+        }
+        
+        .crop-overlay {
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          pointer-events: none;
+        }
+        
+        .crop-box {
+          position: absolute;
+          border: 2px solid #fff;
+          box-shadow: 0 0 0 9999em rgba(0, 0, 0, 0.5);
+          pointer-events: none;
+        }
+        
+        .crop-handle {
+          width: 10px;
+          height: 10px;
+          background-color: #fff;
+          border: 1px solid #0078d4;
+          position: absolute;
+          pointer-events: auto;
+          cursor: nwse-resize;
+        }
+        
+        .crop-handle.tl { top: -5px; left: -5px; cursor: nwse-resize; }
+        .crop-handle.tr { top: -5px; right: -5px; cursor: nesw-resize; }
+        .crop-handle.bl { bottom: -5px; left: -5px; cursor: nesw-resize; }
+        .crop-handle.br { bottom: -5px; right: -5px; cursor: nwse-resize; }
+        .crop-handle.tc { top: -5px; left: 50%; margin-left: -5px; cursor: ns-resize; }
+        .crop-handle.bc { bottom: -5px; left: 50%; margin-left: -5px; cursor: ns-resize; }
+        .crop-handle.ml { top: 50%; left: -5px; margin-top: -5px; cursor: ew-resize; }
+        .crop-handle.mr { top: 50%; right: -5px; margin-top: -5px; cursor: ew-resize; }
+        
+        .center-box {
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          cursor: move;
+          pointer-events: auto;
+        }
+        
+        .controls-panel {
+          padding: 16px 20px;
+          display: flex;
+          flex-wrap: wrap;
+          gap: 16px;
+          background-color: #fff;
+          border-top: 1px solid #eee;
+        }
+        
+        .control-group {
+          display: flex;
+          flex-direction: column;
+          min-width: 120px;
+        }
+        
+        .control-group h4 {
+          margin: 0 0 8px 0;
+          font-size: 14px;
+          color: #333;
+        }
+        
+        .control-group .buttons {
+          display: flex;
+          gap: 4px;
+        }
+        
+        .control-btn {
+          background-color: #f5f5f5;
+          border: 1px solid #ddd;
+          border-radius: 4px;
+          padding: 6px 10px;
+          cursor: pointer;
+          font-size: 13px;
+          color: #333;
+          transition: all 0.2s;
+        }
+        
+        .control-btn:hover {
+          background-color: #e5e5e5;
+        }
+        
+        .control-btn.active {
+          background-color: #0078d4;
+          border-color: #0078d4;
+          color: white;
+        }
+        
+        .slider-container {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+        
+        .slider-container input {
+          flex: 1;
+        }
+        
+        .slider-value {
+          font-size: 12px;
+          min-width: 30px;
+          text-align: right;
+          color: #666;
+        }
+        
+        .actions-panel {
+          display: flex;
+          justify-content: space-between;
+          padding: 16px 20px;
+          background-color: #f5f5f5;
+          border-top: 1px solid #eee;
+        }
+        
+        .btn {
+          padding: 8px 16px;
+          border-radius: 4px;
+          font-weight: 500;
+          cursor: pointer;
+          border: none;
+          transition: all 0.2s;
+        }
+        
+        .btn-cancel {
+          background-color: #f5f5f5;
+          border: 1px solid #ddd;
+          color: #333;
+        }
+        
+        .btn-cancel:hover {
+          background-color: #e5e5e5;
+        }
+        
+        .btn-apply {
+          background-color: #0078d4;
+          color: white;
+        }
+        
+        .btn-apply:hover {
+          background-color: #006cbe;
+        }
+        
+        .hidden {
+          display: none !important;
+        }
+        
+        @media (max-width: 768px) {
+          .controls-panel {
+            flex-direction: column;
+            gap: 12px;
+          }
           
-          <div class="control-group">
-            <div class="control-label">Zoom</div>
-            <div class="slider-container">
-              <span class="slider-label">Zoom</span>
-              <input type="range" min="0" max="1" step="0.01" value="0" class="slider" id="zoomSlider">
-              <span class="slider-value" id="zoomValue">0%</span>
+          .control-group {
+            width: 100%;
+          }
+        }
+      </style>
+      
+      <div class="cropper-container">
+        <div class="upload-area">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+          <h3>Upload an image</h3>
+          <p>Drag & drop or click to select</p>
+          <button class="upload-btn">Select Image</button>
+          <input type="file" accept="image/*" style="display: none;" id="fileInput">
+        </div>
+        
+        <div class="cropper-workspace">
+          <div class="canvas-container">
+            <canvas id="cropCanvas"></canvas>
+            <div class="crop-overlay">
+              <div class="crop-box">
+                <div class="crop-handle tl"></div>
+                <div class="crop-handle tr"></div>
+                <div class="crop-handle bl"></div>
+                <div class="crop-handle br"></div>
+                <div class="crop-handle tc"></div>
+                <div class="crop-handle bc"></div>
+                <div class="crop-handle ml"></div>
+                <div class="crop-handle mr"></div>
+                <div class="center-box"></div>
+              </div>
             </div>
-            <button class="btn" id="zoomInBtn">
-              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="10"></circle>
-                <line x1="12" y1="8" x2="12" y2="16"></line>
-                <line x1="8" y1="12" x2="16" y2="12"></line>
-              </svg>
-            </button>
-            <button class="btn" id="zoomOutBtn">
-              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="10"></circle>
-                <line x1="8" y1="12" x2="16" y2="12"></line>
-              </svg>
-            </button>
           </div>
           
-          <div class="control-group">
-            <div class="control-label">Rotation & Flip</div>
-            <button class="btn" id="rotateLeftBtn">
-              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="1 4 1 10 7 10"></polyline>
-                <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
-              </svg>
-              Rotate Left
-            </button>
-            <button class="btn" id="rotateRightBtn">
-              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="23 4 23 10 17 10"></polyline>
-                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
-              </svg>
-              Rotate Right
-            </button>
-            <button class="btn" id="flipHorizontalBtn">
-              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 3v18"></path>
-                <path d="M17 8l-5-5-5 5"></path>
-                <path d="M17 16l-5 5-5-5"></path>
-              </svg>
-              Flip H
-            </button>
-            <button class="btn" id="flipVerticalBtn">
-              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M3 12h18"></path>
-                <path d="M8 7l-5 5 5 5"></path>
-                <path d="M16 7l5 5-5 5"></path>
-              </svg>
-              Flip V
-            </button>
+          <div class="controls-panel">
+            <div class="control-group">
+              <h4>Aspect Ratio</h4>
+              <div class="buttons">
+                <button class="control-btn active" data-aspect="free">Free</button>
+                <button class="control-btn" data-aspect="1:1">1:1</button>
+                <button class="control-btn" data-aspect="4:3">4:3</button>
+                <button class="control-btn" data-aspect="16:9">16:9</button>
+              </div>
+            </div>
+            
+            <div class="control-group">
+              <h4>Rotate & Flip</h4>
+              <div class="buttons">
+                <button class="control-btn" id="rotateLeft">↺</button>
+                <button class="control-btn" id="rotateRight">↻</button>
+                <button class="control-btn" id="flipH">↔</button>
+                <button class="control-btn" id="flipV">↕</button>
+              </div>
+            </div>
+            
+            <div class="control-group">
+              <h4>Zoom</h4>
+              <div class="slider-container">
+                <input type="range" min="100" max="300" value="100" id="zoomSlider">
+                <span class="slider-value" id="zoomValue">100%</span>
+              </div>
+            </div>
+            
+            <div class="control-group">
+              <h4>Brightness</h4>
+              <div class="slider-container">
+                <input type="range" min="0" max="200" value="100" id="brightnessSlider">
+                <span class="slider-value" id="brightnessValue">100%</span>
+              </div>
+            </div>
+            
+            <div class="control-group">
+              <h4>Contrast</h4>
+              <div class="slider-container">
+                <input type="range" min="0" max="200" value="100" id="contrastSlider">
+                <span class="slider-value" id="contrastValue">100%</span>
+              </div>
+            </div>
+            
+            <div class="control-group">
+              <h4>Saturation</h4>
+              <div class="slider-container">
+                <input type="range" min="0" max="200" value="100" id="saturationSlider">
+                <span class="slider-value" id="saturationValue">100%</span>
+              </div>
+            </div>
           </div>
           
-          <div class="control-group">
-            <div class="control-label">Drag Mode</div>
-            <button class="btn" id="cropModeBtn">
-              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M6 15h12M6 9h12M4 5h16v14H4z"></path>
-              </svg>
-              Crop
-            </button>
-            <button class="btn" id="moveModeBtn">
-              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="5 9 2 12 5 15"></polyline>
-                <polyline points="9 5 12 2 15 5"></polyline>
-                <polyline points="15 19 12 22 9 19"></polyline>
-                <polyline points="19 9 22 12 19 15"></polyline>
-                <line x1="2" y1="12" x2="22" y2="12"></line>
-                <line x1="12" y1="2" x2="12" y2="22"></line>
-              </svg>
-              Move
-            </button>
-          </div>
-          
-          <div class="control-group">
-            <div class="control-label">Actions</div>
-            <button class="btn" id="resetBtn">
-              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
-                <path d="M3 3v5h5"></path>
-              </svg>
-              Reset
-            </button>
-            <button class="btn" id="clearBtn">
-              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M3 6h18"></path>
-                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-              </svg>
-              Clear
-            </button>
-            <button class="btn primary" id="cropBtn">
-              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M6 2v14a2 2 0 0 0 2 2h14"></path>
-                <path d="M18 22V8a2 2 0 0 0-2-2H2"></path>
-              </svg>
-              Crop Image
-            </button>
-          </div>
-        </div>
-        
-        <div class="crop-result" id="cropResult" style="display: none;">
-          <h3>Cropped Result</h3>
-          <img class="result-img" id="resultImg">
-          <div style="margin-top: 15px;">
-            <button class="btn primary" id="downloadBtn">
-              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                <polyline points="7 10 12 15 17 10"></polyline>
-                <line x1="12" y1="15" x2="12" y2="3"></line>
-              </svg>
-              Download
-            </button>
+          <div class="actions-panel">
+            <button class="btn btn-cancel" id="cancelBtn">Cancel</button>
+            <div>
+              <button class="btn btn-apply" id="applyBtn">Apply & Download</button>
+            </div>
           </div>
         </div>
       </div>
     `;
   }
 
-  loadCropperLibrary() {
-    return new Promise((resolve, reject) => {
-      // Check if already loaded
-      if (window.Cropper) {
-        this.cropperLoaded = true;
-        resolve(window.Cropper);
-        return;
-      }
-
-      // Check if script is already in process of loading
-      const existingScript = document.querySelector('script[src*="cropper.min.js"]');
-      if (existingScript) {
-        // If script tag exists but Cropper isn't available yet, wait for it
-        const checkInterval = setInterval(() => {
-          if (window.Cropper) {
-            clearInterval(checkInterval);
-            this.cropperLoaded = true;
-            resolve(window.Cropper);
-          }
-        }, 100);
-        return;
-      }
-
-      // Load script
-      const script = document.createElement('script');
-      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js';
-      script.async = true;
-      script.crossOrigin = 'anonymous';
-      
-      script.onload = () => {
-        console.log('Cropper.js loaded successfully');
-        setTimeout(() => {
-          if (window.Cropper) {
-            this.cropperLoaded = true;
-            resolve(window.Cropper);
-          } else {
-            reject(new Error('Cropper not defined after script load'));
-          }
-        }, 200);
-      };
-      
-      script.onerror = (err) => {
-        console.error('Failed to load Cropper.js', err);
-        reject(err);
-      };
-      
-      document.head.appendChild(script);
+  setupEventListeners() {
+    const uploadArea = this.shadowRoot.querySelector('.upload-area');
+    const fileInput = this.shadowRoot.querySelector('#fileInput');
+    const uploadBtn = this.shadowRoot.querySelector('.upload-btn');
+    const canvas = this.shadowRoot.querySelector('#cropCanvas');
+    const cropBox = this.shadowRoot.querySelector('.crop-box');
+    const centerBox = this.shadowRoot.querySelector('.center-box');
+    const cropHandles = this.shadowRoot.querySelectorAll('.crop-handle');
+    const aspectButtons = this.shadowRoot.querySelectorAll('[data-aspect]');
+    const rotateLeft = this.shadowRoot.querySelector('#rotateLeft');
+    const rotateRight = this.shadowRoot.querySelector('#rotateRight');
+    const flipH = this.shadowRoot.querySelector('#flipH');
+    const flipV = this.shadowRoot.querySelector('#flipV');
+    const zoomSlider = this.shadowRoot.querySelector('#zoomSlider');
+    const brightnessSlider = this.shadowRoot.querySelector('#brightnessSlider');
+    const contrastSlider = this.shadowRoot.querySelector('#contrastSlider');
+    const saturationSlider = this.shadowRoot.querySelector('#saturationSlider');
+    const cancelBtn = this.shadowRoot.querySelector('#cancelBtn');
+    const applyBtn = this.shadowRoot.querySelector('#applyBtn');
+    
+    // Upload area events
+    uploadArea.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      uploadArea.classList.add('drag-over');
     });
-  }
-
-  initEventListeners() {
-    const uploadBtn = this.querySelector('#uploadBtn');
-    const fileInput = this.querySelector('#fileInput');
-    const image = this.querySelector('#image');
-    const placeholder = this.querySelector('#placeholder');
-    const controlsContainer = this.querySelector('#controlsContainer');
-    const cropResult = this.querySelector('#cropResult');
-    const resultImg = this.querySelector('#resultImg');
-    const downloadBtn = this.querySelector('#downloadBtn');
-    const imgContainer = this.querySelector('#imgContainer');
-
-    if (!uploadBtn || !fileInput || !image || !imgContainer) {
-      console.error('Required elements not found');
-      return;
-    }
-
-    // Upload image
-    uploadBtn.addEventListener('click', () => {
+    
+    uploadArea.addEventListener('dragleave', () => {
+      uploadArea.classList.remove('drag-over');
+    });
+    
+    uploadArea.addEventListener('drop', (e) => {
+      e.preventDefault();
+      uploadArea.classList.remove('drag-over');
+      
+      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        this.handleFileSelect(e.dataTransfer.files[0]);
+      }
+    });
+    
+    uploadArea.addEventListener('click', () => {
       fileInput.click();
     });
-
-    fileInput.addEventListener('change', (e) => {
-      if (e.target.files && e.target.files.length > 0) {
-        const file = e.target.files[0];
-        const reader = new FileReader();
-
-        reader.onload = (event) => {
-          this.originalImage = event.target.result;
-          image.src = event.target.result;
-          image.style.display = 'block';
-          placeholder.style.display = 'none';
-          controlsContainer.style.display = 'flex';
-          cropResult.style.display = 'none';
-
-          // Initialize cropper after image is loaded
-          image.onload = () => {
-            // Ensure the imgContainer has position relative
-            imgContainer.style.position = 'relative';
-            // Initialize cropper
-            this.initCropper();
-          };
-        };
-
-        reader.readAsDataURL(file);
+    
+    uploadBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      fileInput.click();
+    });
+    
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files && fileInput.files.length > 0) {
+        this.handleFileSelect(fileInput.files[0]);
       }
     });
-
-    // Aspect ratio buttons
-    const aspectRatioBtns = this.querySelectorAll('.aspect-ratio-btn');
-    aspectRatioBtns.forEach(btn => {
-      btn.addEventListener('click', () => {
-        aspectRatioBtns.forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        const ratio = btn.dataset.ratio;
-        this.cropperOptions.aspectRatio = ratio === 'NaN' ? NaN : eval(ratio);
-        if (this.cropper) {
-          this.cropper.setAspectRatio(this.cropperOptions.aspectRatio);
+    
+    // Crop box drag events
+    centerBox.addEventListener('mousedown', (e) => {
+      this.startDrag(e);
+    });
+    
+    // Touch events for mobile
+    centerBox.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 1) {
+        const touch = e.touches[0];
+        e.clientX = touch.clientX;
+        e.clientY = touch.clientY;
+        this.startDrag(e);
+      }
+    });
+    
+    // Resize handle events
+    cropHandles.forEach(handle => {
+      handle.addEventListener('mousedown', (e) => {
+        this.startResize(e, handle);
+      });
+      
+      handle.addEventListener('touchstart', (e) => {
+        if (e.touches.length === 1) {
+          const touch = e.touches[0];
+          e.clientX = touch.clientX;
+          e.clientY = touch.clientY;
+          this.startResize(e, handle);
         }
       });
     });
-
-    // Zoom controls
-    const zoomSlider = this.querySelector('#zoomSlider');
-    const zoomValue = this.querySelector('#zoomValue');
-    const zoomInBtn = this.querySelector('#zoomInBtn');
-    const zoomOutBtn = this.querySelector('#zoomOutBtn');
-
+    
+    // Global mouse/touch events for drag and resize
+    document.addEventListener('mousemove', this.onMouseMove.bind(this));
+    document.addEventListener('mouseup', this.onMouseUp.bind(this));
+    document.addEventListener('touchmove', this.onTouchMove.bind(this), { passive: false });
+    document.addEventListener('touchend', this.onTouchEnd.bind(this));
+    
+    // Control panel events
+    aspectButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        aspectButtons.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        
+        const aspect = btn.getAttribute('data-aspect');
+        this.setAspectRatio(aspect);
+      });
+    });
+    
+    rotateLeft.addEventListener('click', () => {
+      this.rotation = (this.rotation - 90) % 360;
+      this.renderImage();
+    });
+    
+    rotateRight.addEventListener('click', () => {
+      this.rotation = (this.rotation + 90) % 360;
+      this.renderImage();
+    });
+    
+    flipH.addEventListener('click', () => {
+      this.flipHorizontal = !this.flipHorizontal;
+      this.renderImage();
+    });
+    
+    flipV.addEventListener('click', () => {
+      this.flipVertical = !this.flipVertical;
+      this.renderImage();
+    });
+    
     zoomSlider.addEventListener('input', () => {
-      const value = parseFloat(zoomSlider.value);
-      zoomValue.textContent = `${Math.round(value * 100)}%`;
-      if (this.cropper) {
-        this.cropper.zoomTo(value);
-      }
+      this.scale = parseInt(zoomSlider.value) / 100;
+      this.shadowRoot.querySelector('#zoomValue').textContent = `${zoomSlider.value}%`;
+      this.renderImage();
     });
-
-    zoomInBtn.addEventListener('click', () => {
-      if (this.cropper) {
-        this.cropper.zoom(0.1);
-        this.updateZoomSlider();
-      }
+    
+    brightnessSlider.addEventListener('input', () => {
+      this.brightness = parseInt(brightnessSlider.value);
+      this.shadowRoot.querySelector('#brightnessValue').textContent = `${brightnessSlider.value}%`;
+      this.renderImage();
     });
-
-    zoomOutBtn.addEventListener('click', () => {
-      if (this.cropper) {
-        this.cropper.zoom(-0.1);
-        this.updateZoomSlider();
-      }
+    
+    contrastSlider.addEventListener('input', () => {
+      this.contrast = parseInt(contrastSlider.value);
+      this.shadowRoot.querySelector('#contrastValue').textContent = `${contrastSlider.value}%`;
+      this.renderImage();
     });
-
-    // Rotation and flip controls
-    const rotateLeftBtn = this.querySelector('#rotateLeftBtn');
-    const rotateRightBtn = this.querySelector('#rotateRightBtn');
-    const flipHorizontalBtn = this.querySelector('#flipHorizontalBtn');
-    const flipVerticalBtn = this.querySelector('#flipVerticalBtn');
-
-    rotateLeftBtn.addEventListener('click', () => {
-      if (this.cropper) {
-        this.cropper.rotate(-90);
-      }
+    
+    saturationSlider.addEventListener('input', () => {
+      this.saturation = parseInt(saturationSlider.value);
+      this.shadowRoot.querySelector('#saturationValue').textContent = `${saturationSlider.value}%`;
+      this.renderImage();
     });
-
-    rotateRightBtn.addEventListener('click', () => {
-      if (this.cropper) {
-        this.cropper.rotate(90);
-      }
+    
+    // Action buttons
+    cancelBtn.addEventListener('click', () => {
+      this.resetCropper();
+      this.dispatchEvent(new CustomEvent('cropCancelled'));
     });
-
-    flipHorizontalBtn.addEventListener('click', () => {
-      if (this.cropper) {
-        this.cropper.scaleX(this.cropper.getData().scaleX * -1);
-      }
-    });
-
-    flipVerticalBtn.addEventListener('click', () => {
-      if (this.cropper) {
-        this.cropper.scaleY(this.cropper.getData().scaleY * -1);
-      }
-    });
-
-    // Drag mode controls
-    const cropModeBtn = this.querySelector('#cropModeBtn');
-    const moveModeBtn = this.querySelector('#moveModeBtn');
-
-    cropModeBtn.addEventListener('click', () => {
-      if (this.cropper) {
-        this.cropper.setDragMode('crop');
-        cropModeBtn.classList.add('active');
-        moveModeBtn.classList.remove('active');
-      }
-    });
-
-    moveModeBtn.addEventListener('click', () => {
-      if (this.cropper) {
-        this.cropper.setDragMode('move');
-        moveModeBtn.classList.add('active');
-        cropModeBtn.classList.remove('active');
-      }
-    });
-
-    // Actions
-    const resetBtn = this.querySelector('#resetBtn');
-    const clearBtn = this.querySelector('#clearBtn');
-    const cropBtn = this.querySelector('#cropBtn');
-
-    resetBtn.addEventListener('click', () => {
-      if (this.cropper) {
-        this.cropper.reset();
-        this.updateZoomSlider();
-      }
-    });
-
-    clearBtn.addEventListener('click', () => {
-      if (this.cropper) {
-        this.cropper.destroy();
-        this.cropper = null;
-      }
-      image.src = '';
-      image.style.display = 'none';
-      placeholder.style.display = 'flex';
-      controlsContainer.style.display = 'none';
-      cropResult.style.display = 'none';
-      fileInput.value = '';
-    });
-
-    cropBtn.addEventListener('click', () => {
-      if (this.cropper) {
-        const croppedCanvas = this.cropper.getCroppedCanvas({
-          maxWidth: 4096,
-          maxHeight: 4096,
-          fillColor: '#fff',
-          imageSmoothingEnabled: true,
-          imageSmoothingQuality: 'high',
-        });
-
-        if (croppedCanvas) {
-          this.cropResult = croppedCanvas.toDataURL('image/png');
-          resultImg.src = this.cropResult;
-          cropResult.style.display = 'block';
-          
-          // Dispatch event for Wix
-          this.dispatchEvent(new CustomEvent('crop-complete', {
-            detail: { dataUrl: this.cropResult }
-          }));
-          
-          // Store in the element's property for Wix to access
-          this.setAttribute('crop-result', this.cropResult);
-        }
-      }
-    });
-
-    downloadBtn.addEventListener('click', () => {
-      if (this.cropResult) {
-        const link = document.createElement('a');
-        link.download = 'cropped-image.png';
-        link.href = this.cropResult;
-        link.click();
-      }
+    
+    applyBtn.addEventListener('click', () => {
+      const croppedImage = this.getCroppedImage();
+      this.downloadImage(croppedImage);
+      
+      this.dispatchEvent(new CustomEvent('imageCropped', {
+        detail: { imageData: croppedImage }
+      }));
     });
   }
 
-  initCropper() {
-    const image = this.querySelector('#image');
-    const imgContainer = this.querySelector('#imgContainer');
-    
-    if (!image || !imgContainer) {
-      console.error('Image or container elements not found');
+  removeEventListeners() {
+    document.removeEventListener('mousemove', this.onMouseMove.bind(this));
+    document.removeEventListener('mouseup', this.onMouseUp.bind(this));
+    document.removeEventListener('touchmove', this.onTouchMove.bind(this));
+    document.removeEventListener('touchend', this.onTouchEnd.bind(this));
+  }
+
+  handleFileSelect(file) {
+    // Validate file type
+    if (!file.type.match('image.*')) {
+      this.dispatchEvent(new CustomEvent('error', {
+        detail: { message: 'Please select a valid image file.' }
+      }));
       return;
     }
     
-    // Destroy previous instance if exists
-    if (this.cropper) {
-      this.cropper.destroy();
-    }
-    
-    // Verify Cropper is available
-    if (!window.Cropper) {
-      console.error("Cropper.js is not loaded yet");
-      this.loadCropperLibrary().then(() => {
-        setTimeout(() => this.initCropper(), 200);
-      });
+    // Validate file size
+    const maxSize = this.getAttribute('maxFileSize') || 5; // in MB
+    if (file.size > maxSize * 1024 * 1024) {
+      this.dispatchEvent(new CustomEvent('error', {
+        detail: { message: `File size exceeds the limit of ${maxSize}MB.` }
+      }));
       return;
     }
     
-    try {
-      // Force container to have position relative
-      imgContainer.style.position = 'relative';
+    const reader = new FileReader();
+    
+    reader.onload = (e) => {
+      const img = new Image();
       
-      // Ensure image is displayed
-      image.style.display = 'block';
-      
-      // Enhanced options with ready callback
-      const enhancedOptions = {
-        ...this.cropperOptions,
-        ready: () => {
-          console.log('Cropper is ready');
-          
-          // Set initial active aspect ratio button
-          const aspectRatioBtns = this.querySelectorAll('.aspect-ratio-btn');
-          aspectRatioBtns.forEach(btn => {
-            if (btn.dataset.ratio === 'NaN') {
-              btn.classList.add('active');
-            }
-          });
-          
-          // Set initial active drag mode button
-          const cropModeBtn = this.querySelector('#cropModeBtn');
-          if (cropModeBtn) {
-            cropModeBtn.classList.add('active');
-          }
-          
-          // Force a small zoom to ensure crop box is visible
-          setTimeout(() => {
-            if (this.cropper) {
-              this.cropper.zoom(0.01);
-            }
-          }, 200);
-        }
+      img.onload = () => {
+        this.image = img;
+        this.setupCropper();
       };
       
-      // Initialize Cropper with enhanced options
-      this.cropper = new Cropper(image, enhancedOptions);
+      img.src = e.target.result;
+    };
+    
+    reader.readAsDataURL(file);
+  }
+
+  setupCropper() {
+    const container = this.shadowRoot.querySelector('.cropper-container');
+    container.classList.add('workspace-active');
+    
+    const canvas = this.shadowRoot.querySelector('#cropCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    // Set canvas dimensions
+    const maxWidth = this.getAttribute('maxWidth') || 800;
+    const maxHeight = this.getAttribute('maxHeight') || 600;
+    
+    let width = this.image.width;
+    let height = this.image.height;
+    
+    if (width > maxWidth) {
+      const ratio = maxWidth / width;
+      width = maxWidth;
+      height = height * ratio;
+    }
+    
+    if (height > maxHeight) {
+      const ratio = maxHeight / height;
+      height = maxHeight;
+      width = width * ratio;
+    }
+    
+    canvas.width = width;
+    canvas.height = height;
+    
+    // Initialize crop box to cover 80% of the image
+    this.cropBox = {
+      x: width * 0.1,
+      y: height * 0.1,
+      width: width * 0.8,
+      height: height * 0.8
+    };
+    
+    // Apply initial aspect ratio if specified
+    const defaultAspectRatio = this.getAttribute('defaultAspectRatio') || 'free';
+    if (defaultAspectRatio !== 'free') {
+      this.setAspectRatio(defaultAspectRatio);
       
-      // Force redraw of cropper elements
-      setTimeout(() => {
-        if (this.cropper) {
-          this.cropper.clear();
-          this.cropper.crop();
+      // Update aspect ratio button UI
+      const aspectButtons = this.shadowRoot.querySelectorAll('[data-aspect]');
+      aspectButtons.forEach(btn => {
+        btn.classList.toggle('active', btn.getAttribute('data-aspect') === defaultAspectRatio);
+      });
+    }
+    
+    // Render the image and crop box
+    this.renderImage();
+  }
+
+  renderImage() {
+    const canvas = this.shadowRoot.querySelector('#cropCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    // Clear canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Save the context state
+    ctx.save();
+    
+    // Translate to center for rotation
+    ctx.translate(canvas.width / 2, canvas.height / 2);
+    
+    // Apply rotation
+    ctx.rotate((this.rotation * Math.PI) / 180);
+    
+    // Apply flip
+    ctx.scale(
+      this.flipHorizontal ? -1 : 1,
+      this.flipVertical ? -1 : 1
+    );
+    
+    // Apply zoom
+    ctx.scale(this.scale, this.scale);
+    
+    // Draw the image centered
+    const drawWidth = this.image.width;
+    const drawHeight = this.image.height;
+    
+    ctx.drawImage(
+      this.image,
+      -drawWidth / 2,
+      -drawHeight / 2,
+      drawWidth,
+      drawHeight
+    );
+    
+    // Apply filters using composite operations and filters
+    if (this.brightness !== 100 || this.contrast !== 100 || this.saturation !== 100) {
+      // Create temporary canvas for filters
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = canvas.width;
+      tempCanvas.height = canvas.height;
+      const tempCtx = tempCanvas.getContext('2d');
+      
+      // Copy the current canvas content
+      tempCtx.drawImage(canvas, 0, 0);
+      
+      // Apply CSS filters
+      ctx.filter = `brightness(${this.brightness}%) contrast(${this.contrast}%) saturate(${this.saturation}%)`;
+      ctx.drawImage(tempCanvas, -canvas.width/2, -canvas.height/2);
+    }
+    
+    // Restore the context state
+    ctx.restore();
+    
+    // Update crop box position on canvas
+    this.updateCropBox();
+  }
+
+  updateCropBox() {
+    const cropBoxEl = this.shadowRoot.querySelector('.crop-box');
+    
+    if (cropBoxEl) {
+      cropBoxEl.style.left = `${this.cropBox.x}px`;
+      cropBoxEl.style.top = `${this.cropBox.y}px`;
+      cropBoxEl.style.width = `${this.cropBox.width}px`;
+      cropBoxEl.style.height = `${this.cropBox.height}px`;
+    }
+  }
+
+  setAspectRatio(aspect) {
+    // Store the current aspect ratio
+    this.currentAspectRatio = aspect === 'free' ? null : aspect;
+    
+    if (aspect !== 'free') {
+      const [width, height] = aspect.split(':').map(Number);
+      const aspectRatio = width / height;
+      
+      // Keep the current center point
+      const centerX = this.cropBox.x + this.cropBox.width / 2;
+      const centerY = this.cropBox.y + this.cropBox.height / 2;
+      
+      // Determine new dimensions while maintaining the aspect ratio
+      let newWidth = this.cropBox.width;
+      let newHeight = newWidth / aspectRatio;
+      
+      // If the new height exceeds the image, adjust width to fit
+      const canvas = this.shadowRoot.querySelector('#cropCanvas');
+      if (newHeight > canvas.height * 0.9) {
+        newHeight = canvas.height * 0.9;
+        newWidth = newHeight * aspectRatio;
+      }
+      
+      // Update crop box dimensions
+      this.cropBox.width = newWidth;
+      this.cropBox.height = newHeight;
+      
+      // Recenter the crop box
+      this.cropBox.x = centerX - newWidth / 2;
+      this.cropBox.y = centerY - newHeight / 2;
+      
+      // Make sure the crop box stays within the canvas
+      this.constrainCropBox();
+      
+      // Update the UI
+      this.updateCropBox();
+    }
+  }
+
+  startDrag(e) {
+    e.preventDefault();
+    this.isDragging = true;
+    this.dragStart = {
+      x: e.clientX,
+      y: e.clientY,
+      cropX: this.cropBox.x,
+      cropY: this.cropBox.y
+    };
+  }
+
+  startResize(e, handle) {
+    e.preventDefault();
+    this.isResizing = true;
+    this.resizeHandle = handle.className.split(' ')[1]; // Get handle position (tl, tr, etc.)
+    
+    this.dragStart = {
+      x: e.clientX,
+      y: e.clientY,
+      cropBox: { ...this.cropBox }
+    };
+  }
+
+  onMouseMove(e) {
+    if (this.isDragging) {
+      this.drag(e);
+    } else if (this.isResizing) {
+      this.resize(e);
+    }
+  }
+
+  onTouchMove(e) {
+    if (e.touches.length === 1 && (this.isDragging || this.isResizing)) {
+      e.preventDefault(); // Prevent scrolling when dragging/resizing
+      
+      const touch = e.touches[0];
+      const moveEvent = {
+        clientX: touch.clientX,
+        clientY: touch.clientY
+      };
+      
+      if (this.isDragging) {
+        this.drag(moveEvent);
+      } else if (this.isResizing) {
+        this.resize(moveEvent);
+      }
+    }
+  }
+
+  onMouseUp() {
+    this.isDragging = false;
+    this.isResizing = false;
+  }
+
+  onTouchEnd() {
+    this.isDragging = false;
+    this.isResizing = false;
+  }
+
+  drag(e) {
+    const deltaX = e.clientX - this.dragStart.x;
+    const deltaY = e.clientY - this.dragStart.y;
+    
+    this.cropBox.x = this.dragStart.cropX + deltaX;
+    this.cropBox.y = this.dragStart.cropY + deltaY;
+    
+    // Constrain to canvas bounds
+    this.constrainCropBox();
+    
+    // Update the UI
+    this.updateCropBox();
+  }
+
+  resize(e) {
+    const deltaX = e.clientX - this.dragStart.x;
+    const deltaY = e.clientY - this.dragStart.y;
+    const startBox = this.dragStart.cropBox;
+    
+    let newBox = { ...this.cropBox };
+    
+    // Handle resizing based on which handle was grabbed
+    switch (this.resizeHandle) {
+      case 'tl': // Top Left
+        newBox.x = startBox.x + deltaX;
+        newBox.y = startBox.y + deltaY;
+        newBox.width = startBox.width - deltaX;
+        newBox.height = startBox.height - deltaY;
+        break;
+      case 'tr': // Top Right
+        newBox.y = startBox.y + deltaY;
+        newBox.width = startBox.width + deltaX;
+        newBox.height = startBox.height - deltaY;
+        break;
+      case 'bl': // Bottom Left
+        newBox.x = startBox.x + deltaX;
+        newBox.width = startBox.width - deltaX;
+        newBox.height = startBox.height + deltaY;
+        break;
+      case 'br': // Bottom Right
+        newBox.width = startBox.width + deltaX;
+        newBox.height = startBox.height + deltaY;
+        break;
+      case 'tc': // Top Center
+        newBox.y = startBox.y + deltaY;
+        newBox.height = startBox.height - deltaY;
+        break;
+      case 'bc': // Bottom Center
+        newBox.height = startBox.height + deltaY;
+        break;
+      case 'ml': // Middle Left
+        newBox.x = startBox.x + deltaX;
+        newBox.width = startBox.width - deltaX;
+        break;
+      case 'mr': // Middle Right
+        newBox.width = startBox.width + deltaX;
+        break;
+    }
+    
+    // Ensure minimum dimensions
+    if (newBox.width < 20) newBox.width = 20;
+    if (newBox.height < 20) newBox.height = 20;
+    
+    // Apply aspect ratio constraint if needed
+    if (this.currentAspectRatio) {
+      const [width, height] = this.currentAspectRatio.split(':').map(Number);
+      const aspectRatio = width / height;
+      
+      // Determine which dimension to adjust based on the handle
+      if (['tl', 'tr', 'bl', 'br'].includes(this.resizeHandle)) {
+        // For corner handles, preserve the drag direction
+        if (['tl', 'tr'].includes(this.resizeHandle)) {
+          // Top handles - adjust width based on height
+          newBox.width = newBox.height * aspectRatio;
+        } else {
+          // Bottom handles - adjust height based on width
+          newBox.height = newBox.width / aspectRatio;
         }
-      }, 300);
-      
-      // Initialize sliders
-      this.updateZoomSlider();
-    } catch (error) {
-      console.error("Error initializing Cropper:", error);
+      } else if (['tc', 'bc'].includes(this.resizeHandle)) {
+        // For vertical handles, adjust width based on height
+        newBox.width = newBox.height * aspectRatio;
+      } else {
+        // For horizontal handles, adjust height based on width
+        newBox.height = newBox.width / aspectRatio;
+      }
+    }
+    
+    this.cropBox = newBox;
+    
+    // Constrain to canvas bounds
+    this.constrainCropBox();
+    
+    // Update the UI
+    this.updateCropBox();
+  }
+
+  constrainCropBox() {
+    const canvas = this.shadowRoot.querySelector('#cropCanvas');
+    
+    // Ensure crop box doesn't go outside canvas
+    if (this.cropBox.x < 0) this.cropBox.x = 0;
+    if (this.cropBox.y < 0) this.cropBox.y = 0;
+    
+    // Ensure crop box doesn't exceed canvas size
+    if (this.cropBox.x + this.cropBox.width > canvas.width) {
+      this.cropBox.x = canvas.width - this.cropBox.width;
+    }
+    
+    if (this.cropBox.y + this.cropBox.height > canvas.height) {
+      this.cropBox.y = canvas.height - this.cropBox.height;
     }
   }
-  
-  updateZoomSlider() {
-    if (!this.cropper) return;
+
+  getCroppedImage() {
+    // Create a new canvas for the cropped image
+    const croppedCanvas = document.createElement('canvas');
+    const ctx = croppedCanvas.getContext('2d');
     
-    const zoomSlider = this.querySelector('#zoomSlider');
-    const zoomValue = this.querySelector('#zoomValue');
+    // Set dimensions of the output canvas
+    croppedCanvas.width = this.cropBox.width;
+    croppedCanvas.height = this.cropBox.height;
     
-    if (!zoomSlider || !zoomValue) return;
+    // Get the source canvas
+    const sourceCanvas = this.shadowRoot.querySelector('#cropCanvas');
     
-    try {
-      const canvasData = this.cropper.getCanvasData();
-      const containerData = this.cropper.getContainerData();
-      
-      // Calculate zoom ratio (normalized between 0 and 1)
-      const zoomRatio = canvasData.width / canvasData.naturalWidth;
-      const minZoom = containerData.width / canvasData.naturalWidth;
-      const maxZoom = 2; // Maximum zoom level
-      
-      // Normalize to 0-1 range for the slider
-      const normalizedZoom = (zoomRatio - minZoom) / (maxZoom - minZoom);
-      const clampedZoom = Math.max(0, Math.min(1, normalizedZoom));
-      
-      zoomSlider.value = clampedZoom;
-      zoomValue.textContent = `${Math.round(zoomRatio * 100)}%`;
-    } catch (error) {
-      console.error('Error updating zoom slider:', error);
-    }
+    // Draw the cropped portion
+    ctx.drawImage(
+      sourceCanvas,
+      this.cropBox.x, this.cropBox.y, this.cropBox.width, this.cropBox.height,
+      0, 0, this.cropBox.width, this.cropBox.height
+    );
+    
+    // Get image data URL
+    const quality = parseFloat(this.getAttribute('quality') || 0.92);
+    return croppedCanvas.toDataURL('image/jpeg', quality);
   }
-  
-  // Method to get cropped image data (for external use)
-  getCroppedImageData() {
-    return this.cropResult;
+
+  downloadImage(dataURL) {
+    const link = document.createElement('a');
+    link.href = dataURL;
+    link.download = `cropped-image-${Date.now()}.jpg`;
+    link.click();
+  }
+
+  resetCropper() {
+    // Reset state
+    this.image = null;
+    this.cropBox = { x: 0, y: 0, width: 0, height: 0 };
+    this.scale = 1;
+    this.rotation = 0;
+    this.flipHorizontal = false;
+    this.flipVertical = false;
+    this.brightness = 100;
+    this.contrast = 100;
+    this.saturation = 100;
+    this.currentAspectRatio = null;
+    
+    // Reset UI
+    const container = this.shadowRoot.querySelector('.cropper-container');
+    container.classList.remove('workspace-active');
+    
+    // Reset file input
+    const fileInput = this.shadowRoot.querySelector('#fileInput');
+    fileInput.value = '';
+    
+    // Reset sliders
+    this.shadowRoot.querySelector('#zoomSlider').value = 100;
+    this.shadowRoot.querySelector('#zoomValue').textContent = '100%';
+    this.shadowRoot.querySelector('#brightnessSlider').value = 100;
+    this.shadowRoot.querySelector('#brightnessValue').textContent = '100%';
+    this.shadowRoot.querySelector('#contrastSlider').value = 100;
+    this.shadowRoot.querySelector('#contrastValue').textContent = '100%';
+    this.shadowRoot.querySelector('#saturationSlider').value = 100;
+    this.shadowRoot.querySelector('#saturationValue').textContent = '100%';
+    
+    // Reset aspect ratio buttons
+    const aspectButtons = this.shadowRoot.querySelectorAll('[data-aspect]');
+    aspectButtons.forEach(btn => {
+      btn.classList.toggle('active', btn.getAttribute('data-aspect') === 'free');
+    });
   }
 }
 
 // Register the custom element
-customElements.define('advanced-image-cropper', AdvancedImageCropper);
+customElements.define('wix-image-cropper', WixImageCropper);
