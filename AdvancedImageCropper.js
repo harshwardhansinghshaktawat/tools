@@ -36,7 +36,7 @@ class AdvancedImageCropper extends HTMLElement {
 
   connectedCallback() {
     this.render();
-    // Load Cropper.js library first, then initialize event listeners
+    // First load the Cropper.js library, then init event listeners
     this.loadCropperLibrary().then(() => {
       this.initEventListeners();
     });
@@ -265,6 +265,12 @@ class AdvancedImageCropper extends HTMLElement {
           border-color: #c0392b;
         }
         
+        .btn.active {
+          background-color: #3498db;
+          border-color: #3498db;
+          color: white;
+        }
+        
         .btn-icon {
           width: 16px;
           height: 16px;
@@ -385,6 +391,16 @@ class AdvancedImageCropper extends HTMLElement {
           max-width: 100%;
           border-radius: 8px;
           box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+        }
+        
+        /* This is important for making cropper works */
+        .cropper-container {
+          direction: ltr;
+          font-size: 0;
+          line-height: 0;
+          position: relative;
+          touch-action: none;
+          user-select: none;
         }
         
         @media (max-width: 768px) {
@@ -587,18 +603,18 @@ class AdvancedImageCropper extends HTMLElement {
   }
 
   loadCropperLibrary() {
+    // Return a promise that resolves when the library is loaded
     return new Promise((resolve, reject) => {
-      // Check if Cropper is already available globally
+      // Check if already loaded
       if (window.Cropper) {
         this.cropperLoaded = true;
         resolve();
         return;
       }
 
-      // Check if script is already being loaded
-      const existingScript = document.querySelector('script[src*="cropper.min.js"]');
-      if (existingScript) {
-        // Wait for existing script to load
+      // Check if script is already in process of loading
+      if (document.querySelector('script[src*="cropper.min.js"]')) {
+        // If script tag exists but Cropper isn't available yet, wait for it
         const checkInterval = setInterval(() => {
           if (window.Cropper) {
             clearInterval(checkInterval);
@@ -609,13 +625,7 @@ class AdvancedImageCropper extends HTMLElement {
         return;
       }
 
-      // Load CSS explicitly (in case @import doesn't work properly in Shadow DOM)
-      const linkEl = document.createElement('link');
-      linkEl.rel = 'stylesheet';
-      linkEl.href = 'https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css';
-      document.head.appendChild(linkEl);
-      
-      // Load JS
+      // Load script
       const script = document.createElement('script');
       script.src = 'https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js';
       script.onload = () => {
@@ -625,7 +635,7 @@ class AdvancedImageCropper extends HTMLElement {
       };
       script.onerror = (err) => {
         console.error('Failed to load Cropper.js', err);
-        reject(new Error('Failed to load Cropper.js'));
+        reject(err);
       };
       document.head.appendChild(script);
     });
@@ -667,8 +677,6 @@ class AdvancedImageCropper extends HTMLElement {
             } else {
               this.loadCropperLibrary().then(() => {
                 this.initCropper();
-              }).catch(err => {
-                console.error("Error loading Cropper library:", err);
               });
             }
           };
@@ -879,16 +887,18 @@ class AdvancedImageCropper extends HTMLElement {
       this.cropper.destroy();
     }
     
-    // Ensure Cropper.js is available
+    // Ensure Cropper is available
     if (!window.Cropper) {
-      console.error('Cropper.js not loaded yet');
+      console.error("Cropper.js is not loaded yet. Trying to load it now.");
+      this.loadCropperLibrary().then(() => {
+        this.initCropper();
+      });
       return;
     }
     
-    // Initialize Cropper with options
-    setTimeout(() => {
-      // Small delay to ensure DOM is fully updated
-      this.cropper = new window.Cropper(image, this.cropperOptions);
+    try {
+      // Initialize Cropper with options
+      this.cropper = new Cropper(image, this.cropperOptions);
       
       // Set initial active aspect ratio button
       const aspectRatioBtns = this.shadowRoot.querySelectorAll('.aspect-ratio-btn');
@@ -907,7 +917,9 @@ class AdvancedImageCropper extends HTMLElement {
       // Reset sliders
       this.updateZoomSlider();
       this.updateRotateSlider();
-    }, 100);
+    } catch (error) {
+      console.error("Error initializing Cropper:", error);
+    }
   }
   
   updateZoomSlider() {
