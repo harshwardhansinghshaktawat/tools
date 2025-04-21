@@ -12,6 +12,7 @@ class AdvancedImageCropper extends HTMLElement {
     this.cropper = null;
     this.cropResult = null;
     this.originalImage = null;
+    this.cropperLoaded = false;
 
     // Initial configuration
     this.cropperOptions = {
@@ -35,7 +36,10 @@ class AdvancedImageCropper extends HTMLElement {
 
   connectedCallback() {
     this.render();
-    this.initEventListeners();
+    // Load Cropper.js library first, then initialize event listeners
+    this.loadCropperLibrary().then(() => {
+      this.initEventListeners();
+    });
 
     // Register with Wix Editor
     if (window.wixDevelopmentToolkit) {
@@ -580,25 +584,51 @@ class AdvancedImageCropper extends HTMLElement {
         </div>
       </div>
     `;
-
-    // Load Cropper.js library
-    this.loadCropperLibrary();
   }
 
   loadCropperLibrary() {
-    if (document.querySelector('script[src*="cropper.min.js"]')) {
-      return; // Already loaded
-    }
+    return new Promise((resolve, reject) => {
+      // Check if Cropper is already available globally
+      if (window.Cropper) {
+        this.cropperLoaded = true;
+        resolve();
+        return;
+      }
 
-    const script = document.createElement('script');
-    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js';
-    script.onload = () => {
-      console.log('Cropper.js loaded successfully');
-    };
-    script.onerror = () => {
-      console.error('Failed to load Cropper.js');
-    };
-    document.head.appendChild(script);
+      // Check if script is already being loaded
+      const existingScript = document.querySelector('script[src*="cropper.min.js"]');
+      if (existingScript) {
+        // Wait for existing script to load
+        const checkInterval = setInterval(() => {
+          if (window.Cropper) {
+            clearInterval(checkInterval);
+            this.cropperLoaded = true;
+            resolve();
+          }
+        }, 100);
+        return;
+      }
+
+      // Load CSS explicitly (in case @import doesn't work properly in Shadow DOM)
+      const linkEl = document.createElement('link');
+      linkEl.rel = 'stylesheet';
+      linkEl.href = 'https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css';
+      document.head.appendChild(linkEl);
+      
+      // Load JS
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js';
+      script.onload = () => {
+        console.log('Cropper.js loaded successfully');
+        this.cropperLoaded = true;
+        resolve();
+      };
+      script.onerror = (err) => {
+        console.error('Failed to load Cropper.js', err);
+        reject(new Error('Failed to load Cropper.js'));
+      };
+      document.head.appendChild(script);
+    });
   }
 
   initEventListeners() {
@@ -631,7 +661,16 @@ class AdvancedImageCropper extends HTMLElement {
 
           // Initialize cropper after image is loaded
           image.onload = () => {
-            this.initCropper();
+            // Make sure Cropper.js is loaded before initializing
+            if (this.cropperLoaded) {
+              this.initCropper();
+            } else {
+              this.loadCropperLibrary().then(() => {
+                this.initCropper();
+              }).catch(err => {
+                console.error("Error loading Cropper library:", err);
+              });
+            }
           };
         };
 
@@ -840,26 +879,35 @@ class AdvancedImageCropper extends HTMLElement {
       this.cropper.destroy();
     }
     
+    // Ensure Cropper.js is available
+    if (!window.Cropper) {
+      console.error('Cropper.js not loaded yet');
+      return;
+    }
+    
     // Initialize Cropper with options
-    this.cropper = new Cropper(image, this.cropperOptions);
-    
-    // Set initial active aspect ratio button
-    const aspectRatioBtns = this.shadowRoot.querySelectorAll('.aspect-ratio-btn');
-    aspectRatioBtns.forEach(btn => {
-      if (btn.dataset.ratio === 'NaN') {
-        btn.classList.add('active');
-      } else {
-        btn.classList.remove('active');
-      }
-    });
-    
-    // Set initial active drag mode button
-    const cropModeBtn = this.shadowRoot.getElementById('cropModeBtn');
-    cropModeBtn.classList.add('active');
-    
-    // Reset sliders
-    this.updateZoomSlider();
-    this.updateRotateSlider();
+    setTimeout(() => {
+      // Small delay to ensure DOM is fully updated
+      this.cropper = new window.Cropper(image, this.cropperOptions);
+      
+      // Set initial active aspect ratio button
+      const aspectRatioBtns = this.shadowRoot.querySelectorAll('.aspect-ratio-btn');
+      aspectRatioBtns.forEach(btn => {
+        if (btn.dataset.ratio === 'NaN') {
+          btn.classList.add('active');
+        } else {
+          btn.classList.remove('active');
+        }
+      });
+      
+      // Set initial active drag mode button
+      const cropModeBtn = this.shadowRoot.getElementById('cropModeBtn');
+      cropModeBtn.classList.add('active');
+      
+      // Reset sliders
+      this.updateZoomSlider();
+      this.updateRotateSlider();
+    }, 100);
   }
   
   updateZoomSlider() {
