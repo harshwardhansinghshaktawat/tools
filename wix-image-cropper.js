@@ -35,6 +35,7 @@ class WixImageCropper extends HTMLElement {
     this.contrast = 100;
     this.saturation = 100;
     this.currentAspectRatio = null; // null = free form
+    this.originalFileType = null; // store original file type
     
     // Render the initial UI
     this.render();
@@ -127,6 +128,12 @@ class WixImageCropper extends HTMLElement {
         .upload-area h3 {
           margin: 0 0 8px 0;
           color: #333;
+        }
+        
+        .supported-formats {
+          font-size: 12px;
+          color: #666;
+          margin-top: 4px !important;
         }
         
         .upload-area p {
@@ -288,6 +295,47 @@ class WixImageCropper extends HTMLElement {
         .control-group .buttons {
           display: flex;
           gap: 4px;
+          flex-wrap: wrap;
+        }
+        
+        .ratio-buttons {
+          max-width: 300px;
+        }
+        
+        .custom-ratio {
+          display: flex;
+          margin-top: 8px;
+          gap: 8px;
+          align-items: center;
+        }
+        
+        .custom-ratio-inputs {
+          display: flex;
+          align-items: center;
+          border: 1px solid #ddd;
+          border-radius: 4px;
+          padding: 2px 8px;
+          background: #f5f5f5;
+        }
+        
+        .custom-dimension {
+          width: 50px;
+          border: none;
+          background: transparent;
+          padding: 4px;
+          text-align: center;
+          -moz-appearance: textfield;
+        }
+        
+        .custom-dimension::-webkit-inner-spin-button, 
+        .custom-dimension::-webkit-outer-spin-button { 
+          -webkit-appearance: none;
+          margin: 0;
+        }
+        
+        .dimension-separator {
+          margin: 0 4px;
+          color: #666;
         }
         
         .control-btn {
@@ -381,7 +429,7 @@ class WixImageCropper extends HTMLElement {
       </style>
       
       <div class="cropper-container">
-        <div class="upload-area">
+                  <div class="upload-area">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
             <polyline points="17 8 12 3 7 8"></polyline>
@@ -389,6 +437,7 @@ class WixImageCropper extends HTMLElement {
           </svg>
           <h3>Upload an image</h3>
           <p>Drag & drop or click to select</p>
+          <p class="supported-formats">Supported formats: JPG, PNG, GIF, WEBP, BMP</p>
           <button class="upload-btn">Select Image</button>
           <input type="file" accept="image/*" style="display: none;" id="fileInput">
         </div>
@@ -415,11 +464,23 @@ class WixImageCropper extends HTMLElement {
           <div class="controls-panel">
             <div class="control-group">
               <h4>Aspect Ratio</h4>
-              <div class="buttons">
+              <div class="buttons ratio-buttons">
                 <button class="control-btn active" data-aspect="free">Free</button>
                 <button class="control-btn" data-aspect="1:1">1:1</button>
                 <button class="control-btn" data-aspect="4:3">4:3</button>
                 <button class="control-btn" data-aspect="16:9">16:9</button>
+                <button class="control-btn" data-aspect="3:2">3:2</button>
+                <button class="control-btn" data-aspect="2:3">2:3</button>
+                <button class="control-btn" data-aspect="5:4">5:4</button>
+                <button class="control-btn" data-aspect="9:16">9:16</button>
+              </div>
+              <div class="custom-ratio">
+                <div class="custom-ratio-inputs">
+                  <input type="number" id="customWidth" min="1" placeholder="W" class="custom-dimension">
+                  <span class="dimension-separator">×</span>
+                  <input type="number" id="customHeight" min="1" placeholder="H" class="custom-dimension">
+                </div>
+                <button class="control-btn" id="applyCustomRatio">Apply</button>
               </div>
             </div>
             
@@ -436,7 +497,7 @@ class WixImageCropper extends HTMLElement {
             <div class="control-group">
               <h4>Zoom</h4>
               <div class="slider-container">
-                <input type="range" min="100" max="300" value="100" id="zoomSlider">
+                <input type="range" min="50" max="300" value="100" id="zoomSlider">
                 <span class="slider-value" id="zoomValue">100%</span>
               </div>
             </div>
@@ -496,6 +557,9 @@ class WixImageCropper extends HTMLElement {
     const saturationSlider = this.shadowRoot.querySelector('#saturationSlider');
     const cancelBtn = this.shadowRoot.querySelector('#cancelBtn');
     const applyBtn = this.shadowRoot.querySelector('#applyBtn');
+    const customWidth = this.shadowRoot.querySelector('#customWidth');
+    const customHeight = this.shadowRoot.querySelector('#customHeight');
+    const applyCustomRatio = this.shadowRoot.querySelector('#applyCustomRatio');
     
     // Upload area events
     uploadArea.addEventListener('dragover', (e) => {
@@ -576,11 +640,33 @@ class WixImageCropper extends HTMLElement {
         
         const aspect = btn.getAttribute('data-aspect');
         this.setAspectRatio(aspect);
+        
+        // Clear custom inputs when selecting a preset
+        customWidth.value = '';
+        customHeight.value = '';
       });
+    });
+    
+    // Custom aspect ratio
+    applyCustomRatio.addEventListener('click', () => {
+      const width = parseInt(customWidth.value);
+      const height = parseInt(customHeight.value);
+      
+      if (width > 0 && height > 0) {
+        aspectButtons.forEach(b => b.classList.remove('active'));
+        this.currentAspectRatio = `${width}:${height}`;
+        this.setAspectRatio(this.currentAspectRatio);
+      } else {
+        // Display error for invalid dimensions
+        this.dispatchEvent(new CustomEvent('error', {
+          detail: { message: 'Please enter valid width and height values.' }
+        }));
+      }
     });
     
     rotateLeft.addEventListener('click', () => {
       this.rotation = (this.rotation - 90) % 360;
+      if (this.rotation < 0) this.rotation += 360;
       this.renderImage();
     });
     
@@ -637,6 +723,99 @@ class WixImageCropper extends HTMLElement {
         detail: { imageData: croppedImage }
       }));
     });
+    
+    // Additional keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+      // Only respond to keyboard shortcuts if we're in cropping mode
+      if (!this.image) return;
+      
+      switch (e.key) {
+        case 'ArrowLeft':
+          // Move crop box left
+          if (e.shiftKey) {
+            this.cropBox.x -= 10;
+          } else {
+            this.cropBox.x -= 1;
+          }
+          this.constrainCropBox();
+          this.updateCropBox();
+          break;
+        case 'ArrowRight':
+          // Move crop box right
+          if (e.shiftKey) {
+            this.cropBox.x += 10;
+          } else {
+            this.cropBox.x += 1;
+          }
+          this.constrainCropBox();
+          this.updateCropBox();
+          break;
+        case 'ArrowUp':
+          // Move crop box up
+          if (e.shiftKey) {
+            this.cropBox.y -= 10;
+          } else {
+            this.cropBox.y -= 1;
+          }
+          this.constrainCropBox();
+          this.updateCropBox();
+          break;
+        case 'ArrowDown':
+          // Move crop box down
+          if (e.shiftKey) {
+            this.cropBox.y += 10;
+          } else {
+            this.cropBox.y += 1;
+          }
+          this.constrainCropBox();
+          this.updateCropBox();
+          break;
+        case 'r':
+          // Rotate right
+          this.rotation = (this.rotation + 90) % 360;
+          this.renderImage();
+          break;
+        case 'l':
+          // Rotate left
+          this.rotation = (this.rotation - 90) % 360;
+          if (this.rotation < 0) this.rotation += 360;
+          this.renderImage();
+          break;
+        case '+':
+        case '=':
+          // Zoom in
+          const newZoomIn = Math.min(300, parseInt(zoomSlider.value) + 10);
+          zoomSlider.value = newZoomIn;
+          this.scale = newZoomIn / 100;
+          this.shadowRoot.querySelector('#zoomValue').textContent = `${newZoomIn}%`;
+          this.renderImage();
+          break;
+        case '-':
+          // Zoom out
+          const newZoomOut = Math.max(50, parseInt(zoomSlider.value) - 10);
+          zoomSlider.value = newZoomOut;
+          this.scale = newZoomOut / 100;
+          this.shadowRoot.querySelector('#zoomValue').textContent = `${newZoomOut}%`;
+          this.renderImage();
+          break;
+        case 'Enter':
+          // Apply crop
+          if (e.ctrlKey || e.metaKey) {
+            const croppedImage = this.getCroppedImage();
+            this.downloadImage(croppedImage);
+            
+            this.dispatchEvent(new CustomEvent('imageCropped', {
+              detail: { imageData: croppedImage }
+            }));
+          }
+          break;
+        case 'Escape':
+          // Cancel crop
+          this.resetCropper();
+          this.dispatchEvent(new CustomEvent('cropCancelled'));
+          break;
+      }
+    });
   }
 
   removeEventListeners() {
@@ -648,12 +827,25 @@ class WixImageCropper extends HTMLElement {
 
   handleFileSelect(file) {
     // Validate file type
-    if (!file.type.match('image.*')) {
+    const validTypes = [
+      'image/jpeg', 
+      'image/png', 
+      'image/gif', 
+      'image/webp', 
+      'image/bmp',
+      'image/svg+xml', 
+      'image/tiff'
+    ];
+    
+    if (!validTypes.includes(file.type)) {
       this.dispatchEvent(new CustomEvent('error', {
-        detail: { message: 'Please select a valid image file.' }
+        detail: { message: 'Please select a valid image file (JPG, PNG, GIF, WEBP, BMP, SVG, TIFF).' }
       }));
       return;
     }
+    
+    // Store the original file type
+    this.originalFileType = file.type;
     
     // Validate file size
     const maxSize = this.getAttribute('maxFileSize') || 5; // in MB
@@ -780,6 +972,40 @@ class WixImageCropper extends HTMLElement {
     const canvas = this.shadowRoot.querySelector('#cropCanvas');
     const ctx = canvas.getContext('2d');
     
+    // Calculate the maximum size that can fit the rotated image
+    const maxDimension = Math.max(this.image.width, this.image.height);
+    const diagonalLength = Math.ceil(Math.sqrt(maxDimension * maxDimension * 2));
+    
+    // Resize canvas if needed for rotation
+    const needsRotationResizing = this.rotation % 90 !== 0 || this.rotation % 180 === 90;
+    
+    if (needsRotationResizing) {
+      canvas.width = diagonalLength;
+      canvas.height = diagonalLength;
+    } else {
+      // Set canvas dimensions
+      const maxWidth = this.getAttribute('maxWidth') || 800;
+      const maxHeight = this.getAttribute('maxHeight') || 600;
+      
+      let width = this.image.width;
+      let height = this.image.height;
+      
+      if (width > maxWidth) {
+        const ratio = maxWidth / width;
+        width = maxWidth;
+        height = height * ratio;
+      }
+      
+      if (height > maxHeight) {
+        const ratio = maxHeight / height;
+        height = maxHeight;
+        width = width * ratio;
+      }
+      
+      canvas.width = width;
+      canvas.height = height;
+    }
+    
     // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
@@ -850,6 +1076,35 @@ class WixImageCropper extends HTMLElement {
       ctx.moveTo(0, y);
       ctx.lineTo(canvas.width, y);
       ctx.stroke();
+    }
+    
+    // Adjust the crop box if the canvas size has changed
+    if (needsRotationResizing && !this.isFirstRender) {
+      const centerX = canvas.width / 2;
+      const centerY = canvas.height / 2;
+      const maxDimAvailable = Math.min(canvas.width, canvas.height) * 0.7;
+      
+      // Maintain aspect ratio if set
+      if (this.currentAspectRatio) {
+        const [width, height] = this.currentAspectRatio.split(':').map(Number);
+        const aspectRatio = width / height;
+        
+        if (aspectRatio > 1) {
+          this.cropBox.width = maxDimAvailable;
+          this.cropBox.height = maxDimAvailable / aspectRatio;
+        } else {
+          this.cropBox.height = maxDimAvailable;
+          this.cropBox.width = maxDimAvailable * aspectRatio;
+        }
+      } else {
+        // If no aspect ratio, make it square by default
+        this.cropBox.width = maxDimAvailable;
+        this.cropBox.height = maxDimAvailable;
+      }
+      
+      // Center the crop box
+      this.cropBox.x = centerX - this.cropBox.width / 2;
+      this.cropBox.y = centerY - this.cropBox.height / 2;
     }
     
     // Force recalculation of canvas position
@@ -939,11 +1194,23 @@ class WixImageCropper extends HTMLElement {
   startDrag(e) {
     e.preventDefault();
     this.isDragging = true;
+    
+    // Get the current position of the canvas element
+    const canvas = this.shadowRoot.querySelector('#cropCanvas');
+    const canvasBounds = canvas.getBoundingClientRect();
+    const containerBounds = this.shadowRoot.querySelector('.canvas-container').getBoundingClientRect();
+    
+    // Calculate the offset from the container edges to the canvas
+    const offsetLeft = (containerBounds.width - canvasBounds.width) / 2;
+    const offsetTop = (containerBounds.height - canvasBounds.height) / 2;
+    
     this.dragStart = {
       x: e.clientX,
       y: e.clientY,
       cropX: this.cropBox.x,
-      cropY: this.cropBox.y
+      cropY: this.cropBox.y,
+      offsetLeft: offsetLeft,
+      offsetTop: offsetTop
     };
   }
 
@@ -952,10 +1219,21 @@ class WixImageCropper extends HTMLElement {
     this.isResizing = true;
     this.resizeHandle = handle.className.split(' ')[1]; // Get handle position (tl, tr, etc.)
     
+    // Get the current position of the canvas element
+    const canvas = this.shadowRoot.querySelector('#cropCanvas');
+    const canvasBounds = canvas.getBoundingClientRect();
+    const containerBounds = this.shadowRoot.querySelector('.canvas-container').getBoundingClientRect();
+    
+    // Calculate the offset from the container edges to the canvas
+    const offsetLeft = (containerBounds.width - canvasBounds.width) / 2;
+    const offsetTop = (containerBounds.height - canvasBounds.height) / 2;
+    
     this.dragStart = {
       x: e.clientX,
       y: e.clientY,
-      cropBox: { ...this.cropBox }
+      cropBox: { ...this.cropBox },
+      offsetLeft: offsetLeft,
+      offsetTop: offsetTop
     };
   }
 
@@ -1132,11 +1410,18 @@ class WixImageCropper extends HTMLElement {
     const originalBorder = cropBox.style.border;
     cropBox.style.border = '3px solid #4CAF50';
     
+    // Get the current position of the crop box for correct positioning of the flash overlay
+    const canvas = this.shadowRoot.querySelector('#cropCanvas');
+    const canvasBounds = canvas.getBoundingClientRect();
+    const containerBounds = this.shadowRoot.querySelector('.canvas-container').getBoundingClientRect();
+    const offsetLeft = (containerBounds.width - canvasBounds.width) / 2;
+    const offsetTop = (containerBounds.height - canvasBounds.height) / 2;
+    
     // Create temporary flash effect overlay
     const flashOverlay = document.createElement('div');
     flashOverlay.style.position = 'absolute';
-    flashOverlay.style.top = `${this.cropBox.y}px`;
-    flashOverlay.style.left = `${this.cropBox.x}px`;
+    flashOverlay.style.top = `${offsetTop + this.cropBox.y}px`;
+    flashOverlay.style.left = `${offsetLeft + this.cropBox.x}px`;
     flashOverlay.style.width = `${this.cropBox.width}px`;
     flashOverlay.style.height = `${this.cropBox.height}px`;
     flashOverlay.style.backgroundColor = 'rgba(255, 255, 255, 0.5)';
@@ -1181,7 +1466,19 @@ class WixImageCropper extends HTMLElement {
     
     // Get image data URL
     const quality = parseFloat(this.getAttribute('quality') || 0.92);
-    const dataURL = croppedCanvas.toDataURL('image/jpeg', quality);
+    
+    // Choose the right MIME type based on original image format
+    let mimeType = 'image/jpeg';
+    if (this.originalFileType) {
+      // Use the same format if possible, fall back to JPEG
+      if (this.originalFileType === 'image/png' || 
+          this.originalFileType === 'image/webp' || 
+          this.originalFileType === 'image/gif') {
+        mimeType = this.originalFileType;
+      }
+    }
+    
+    const dataURL = croppedCanvas.toDataURL(mimeType, quality);
     
     // Show preview briefly
     previewImg.src = dataURL;
@@ -1200,7 +1497,37 @@ class WixImageCropper extends HTMLElement {
   downloadImage(dataURL) {
     const link = document.createElement('a');
     link.href = dataURL;
-    link.download = `cropped-image-${Date.now()}.jpg`;
+    
+    // Determine file format based on the original image
+    let fileExtension = 'jpg';
+    
+    // If original image type is known, try to preserve it
+    if (this.originalFileType) {
+      switch (this.originalFileType) {
+        case 'image/png':
+          fileExtension = 'png';
+          break;
+        case 'image/webp':
+          fileExtension = 'webp';
+          break;
+        case 'image/gif':
+          fileExtension = 'gif';
+          break;
+        case 'image/bmp':
+          fileExtension = 'bmp';
+          break;
+        case 'image/svg+xml':
+          fileExtension = 'svg';
+          break;
+        case 'image/tiff':
+          fileExtension = 'tiff';
+          break;
+        default:
+          fileExtension = 'jpg';
+      }
+    }
+    
+    link.download = `cropped-image-${Date.now()}.${fileExtension}`;
     link.click();
   }
 
