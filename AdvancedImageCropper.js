@@ -98,7 +98,278 @@ class AdvancedImageCropper extends HTMLElement {
     // Add required CSS for Cropper.js and our custom styling
     this.shadowRoot.innerHTML = `
       <style>
-        @import "https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css";
+        /* Include critical Cropper.js styles directly instead of importing */
+        .cropper-container {
+          font-size: 0;
+          line-height: 0;
+          position: relative;
+          user-select: none;
+          direction: ltr;
+          touch-action: none;
+          -webkit-tap-highlight-color: transparent;
+          -webkit-touch-callout: none;
+          z-index: 10 !important;
+        }
+
+        .cropper-container img {
+          display: block;
+          height: 100%;
+          width: 100%;
+          max-height: none !important;
+          max-width: none !important;
+          min-height: 0 !important;
+          min-width: 0 !important;
+          image-orientation: 0deg;
+        }
+
+        .cropper-wrap-box,
+        .cropper-canvas,
+        .cropper-drag-box,
+        .cropper-crop-box,
+        .cropper-modal {
+          position: absolute;
+          top: 0;
+          right: 0;
+          bottom: 0;
+          left: 0;
+        }
+
+        .cropper-wrap-box,
+        .cropper-canvas {
+          overflow: hidden;
+        }
+
+        .cropper-drag-box {
+          background-color: #fff;
+          opacity: 0;
+        }
+
+        .cropper-modal {
+          background-color: #000;
+          opacity: 0.5;
+        }
+
+        .cropper-view-box {
+          display: block;
+          height: 100%;
+          width: 100%;
+          overflow: hidden;
+          outline: 1px solid #39f;
+          outline-color: rgba(51, 153, 255, 0.75);
+        }
+
+        .cropper-dashed {
+          position: absolute;
+          display: block;
+          opacity: 0.5;
+          border: 0 dashed #eee;
+        }
+
+        .cropper-dashed.dashed-h {
+          top: 33.33333%;
+          left: 0;
+          width: 100%;
+          height: 33.33333%;
+          border-top-width: 1px;
+          border-bottom-width: 1px;
+        }
+
+        .cropper-dashed.dashed-v {
+          top: 0;
+          left: 33.33333%;
+          width: 33.33333%;
+          height: 100%;
+          border-right-width: 1px;
+          border-left-width: 1px;
+        }
+
+        .cropper-center {
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          display: block;
+          width: 0;
+          height: 0;
+          opacity: 0.75;
+        }
+
+        .cropper-center:before,
+        .cropper-center:after {
+          position: absolute;
+          display: block;
+          background-color: #eee;
+          content: ' ';
+        }
+
+        .cropper-center:before {
+          top: 0;
+          left: -3px;
+          width: 7px;
+          height: 1px;
+        }
+
+        .cropper-center:after {
+          top: -3px;
+          left: 0;
+          width: 1px;
+          height: 7px;
+        }
+
+        .cropper-face,
+        .cropper-line,
+        .cropper-point {
+          position: absolute;
+          display: block;
+          width: 100%;
+          height: 100%;
+          opacity: 0.1;
+        }
+
+        .cropper-face {
+          top: 0;
+          left: 0;
+          background-color: #fff;
+        }
+
+        .cropper-line {
+          background-color: #39f;
+        }
+
+        .cropper-line.line-e {
+          top: 0;
+          right: -3px;
+          width: 5px;
+          cursor: e-resize;
+        }
+
+        .cropper-line.line-n {
+          top: -3px;
+          left: 0;
+          height: 5px;
+          cursor: n-resize;
+        }
+
+        .cropper-line.line-w {
+          top: 0;
+          left: -3px;
+          width: 5px;
+          cursor: w-resize;
+        }
+
+        .cropper-line.line-s {
+          bottom: -3px;
+          left: 0;
+          height: 5px;
+          cursor: s-resize;
+        }
+
+        .cropper-point {
+          width: 5px;
+          height: 5px;
+          opacity: 0.75;
+          background-color: #39f;
+        }
+
+        .cropper-point.point-e {
+          top: 50%;
+          right: -3px;
+          margin-top: -3px;
+          cursor: e-resize;
+        }
+
+        .cropper-point.point-n {
+          top: -3px;
+          left: 50%;
+          margin-left: -3px;
+          cursor: n-resize;
+        }
+
+        .cropper-point.point-w {
+          top: 50%;
+          left: -3px;
+          margin-top: -3px;
+          cursor: w-resize;
+        }
+
+        .cropper-point.point-s {
+          bottom: -3px;
+          left: 50%;
+          margin-left: -3px;
+          cursor: s-resize;
+        }
+
+        .cropper-point.point-ne {
+          top: -3px;
+          right: -3px;
+          cursor: ne-resize;
+        }
+
+        .cropper-point.point-nw {
+          top: -3px;
+          left: -3px;
+          cursor: nw-resize;
+        }
+
+        .cropper-point.point-sw {
+          bottom: -3px;
+          left: -3px;
+          cursor: sw-resize;
+        }
+
+        .cropper-point.point-se {
+          right: -3px;
+          bottom: -3px;
+          width: 20px;
+          height: 20px;
+          cursor: se-resize;
+          opacity: 0.1;
+        }
+
+        .cropper-point.point-se:before {
+          position: absolute;
+          right: -50%;
+          bottom: -50%;
+          display: block;
+          width: 200%;
+          height: 200%;
+          background-color: #39f;
+          opacity: 0;
+          content: ' ';
+        }
+
+        .cropper-invisible {
+          opacity: 0;
+        }
+
+        .cropper-bg {
+          background-image: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQAQMAAAAlPW0iAAAAA3NCSVQICAjb4U/gAAAABlBMVEXMzMz////TjRV2AAAACXBIWXMAAArrAAAK6wGCiw1aAAAAHHRFWHRTb2Z0d2FyZQBBZG9iZSBGaXJld29ya3MgQ1M26LyyjAAAABFJREFUCJlj+M/AgBVhF/0PAH6/D/HkDxOGAAAAAElFTkSuQmCC');
+        }
+
+        .cropper-hide {
+          position: absolute;
+          display: block;
+          width: 0;
+          height: 0;
+        }
+
+        .cropper-hidden {
+          display: none !important;
+        }
+
+        .cropper-move {
+          cursor: move;
+        }
+
+        .cropper-crop {
+          cursor: crosshair;
+        }
+
+        .cropper-disabled .cropper-drag-box,
+        .cropper-disabled .cropper-face,
+        .cropper-disabled .cropper-line,
+        .cropper-disabled .cropper-point {
+          cursor: not-allowed;
+        }
         
         :host {
           display: block;
@@ -613,7 +884,8 @@ class AdvancedImageCropper extends HTMLElement {
       }
 
       // Check if script is already in process of loading
-      if (document.querySelector('script[src*="cropper.min.js"]')) {
+      const existingScript = document.querySelector('script[src*="cropper.min.js"]');
+      if (existingScript) {
         // If script tag exists but Cropper isn't available yet, wait for it
         const checkInterval = setInterval(() => {
           if (window.Cropper) {
@@ -625,19 +897,50 @@ class AdvancedImageCropper extends HTMLElement {
         return;
       }
 
-      // Load script
-      const script = document.createElement('script');
-      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js';
-      script.onload = () => {
-        console.log('Cropper.js loaded successfully');
-        this.cropperLoaded = true;
-        resolve();
-      };
-      script.onerror = (err) => {
-        console.error('Failed to load Cropper.js', err);
+      try {
+        // Try to dynamically load Cropper.js
+        // First, remove any existing script to avoid conflicts
+        const oldScripts = document.querySelectorAll('script[src*="cropper"]');
+        oldScripts.forEach(s => s.parentNode.removeChild(s));
+        
+        // Create and inject the script
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js';
+        script.async = true;
+        script.crossOrigin = 'anonymous';
+        
+        script.onload = () => {
+          console.log('Cropper.js loaded successfully');
+          // Wait a moment to ensure it's initialized
+          setTimeout(() => {
+            if (window.Cropper) {
+              this.cropperLoaded = true;
+              resolve();
+            } else {
+              console.error('Cropper.js loaded but Cropper object not found in window');
+              reject(new Error('Cropper not defined after script load'));
+            }
+          }, 100);
+        };
+        
+        script.onerror = (err) => {
+          console.error('Failed to load Cropper.js', err);
+          reject(err);
+        };
+        
+        // Try to add to head first, then to body if head isn't available
+        if (document.head) {
+          document.head.appendChild(script);
+        } else if (document.body) {
+          document.body.appendChild(script);
+        } else {
+          // Last resort, add to document
+          document.appendChild(script);
+        }
+      } catch (err) {
+        console.error('Error while trying to load Cropper.js:', err);
         reject(err);
-      };
-      document.head.appendChild(script);
+      }
     });
   }
 
@@ -881,6 +1184,7 @@ class AdvancedImageCropper extends HTMLElement {
 
   initCropper() {
     const image = this.shadowRoot.getElementById('image');
+    const imgContainer = this.shadowRoot.getElementById('imgContainer');
     
     // Destroy previous instance if exists
     if (this.cropper) {
@@ -891,14 +1195,54 @@ class AdvancedImageCropper extends HTMLElement {
     if (!window.Cropper) {
       console.error("Cropper.js is not loaded yet. Trying to load it now.");
       this.loadCropperLibrary().then(() => {
-        this.initCropper();
+        // Add a small delay to ensure DOM is ready
+        setTimeout(() => {
+          this.initCropper();
+        }, 300);
       });
       return;
     }
     
     try {
-      // Initialize Cropper with options
-      this.cropper = new Cropper(image, this.cropperOptions);
+      // Make sure the image container has position relative
+      imgContainer.style.position = 'relative';
+      
+      // Make sure image has display block and is visible
+      image.style.display = 'block';
+      image.style.maxWidth = '100%';
+      image.style.maxHeight = '100%';
+      
+      // Set options with important overrides to ensure visibility
+      const enhancedOptions = {
+        ...this.cropperOptions,
+        viewMode: 1,
+        zoomable: true,
+        scalable: true,
+        guides: true,
+        cropBoxResizable: true,
+        cropBoxMovable: true,
+        dragMode: 'crop',
+        ready: () => {
+          console.log('Cropper is ready');
+          // Force a small zoom to ensure the crop box is visible
+          setTimeout(() => {
+            if (this.cropper) {
+              this.cropper.zoom(0.01);
+            }
+          }, 200);
+        }
+      };
+      
+      // Initialize Cropper with enhanced options
+      this.cropper = new Cropper(image, enhancedOptions);
+      
+      // Force redraw of cropper elements to ensure visibility
+      setTimeout(() => {
+        if (this.cropper) {
+          this.cropper.clear();
+          this.cropper.crop();
+        }
+      }, 500);
       
       // Set initial active aspect ratio button
       const aspectRatioBtns = this.shadowRoot.querySelectorAll('.aspect-ratio-btn');
