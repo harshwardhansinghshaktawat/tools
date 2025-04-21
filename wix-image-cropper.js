@@ -171,13 +171,13 @@ class WixImageCropper extends HTMLElement {
           background-color: #222;
           margin: 0 20px;
           border-radius: 8px;
+          display: flex;
+          justify-content: center;
+          align-items: center;
         }
         
         #cropCanvas {
-          position: absolute;
-          top: 50%;
-          left: 50%;
-          transform: translate(-50%, -50%);
+          position: relative; /* Changed from absolute to relative */
           max-width: 100%;
           max-height: 100%;
         }
@@ -189,6 +189,9 @@ class WixImageCropper extends HTMLElement {
           right: 0;
           bottom: 0;
           pointer-events: none;
+          display: flex;
+          justify-content: center;
+          align-items: center;
         }
         
         .crop-box {
@@ -849,32 +852,46 @@ class WixImageCropper extends HTMLElement {
       ctx.stroke();
     }
     
-    // Update crop box position on canvas
-    this.updateCropBox();
-    
-    // Highlight the crop area with an animation effect on initial render
-    if (this.isFirstRender) {
-      const cropBox = this.shadowRoot.querySelector('.crop-box');
-      cropBox.style.transition = 'all 0.3s ease';
-      cropBox.style.boxShadow = '0 0 0 9999em rgba(0, 0, 0, 0.3)';
+    // Force recalculation of canvas position
+    setTimeout(() => {
+      // Update crop box position on canvas
+      this.updateCropBox();
       
-      setTimeout(() => {
-        cropBox.style.boxShadow = '0 0 0 9999em rgba(0, 0, 0, 0.7)';
+      // Highlight the crop area with an animation effect on initial render
+      if (this.isFirstRender) {
+        const cropBox = this.shadowRoot.querySelector('.crop-box');
+        cropBox.style.transition = 'all 0.3s ease';
+        cropBox.style.boxShadow = '0 0 0 9999em rgba(0, 0, 0, 0.3)';
         
         setTimeout(() => {
-          cropBox.style.transition = 'none';
-          this.isFirstRender = false;
-        }, 300);
-      }, 100);
-    }
+          cropBox.style.boxShadow = '0 0 0 9999em rgba(0, 0, 0, 0.7)';
+          
+          setTimeout(() => {
+            cropBox.style.transition = 'none';
+            this.isFirstRender = false;
+          }, 300);
+        }, 100);
+      }
+    }, 0);
   }
 
   updateCropBox() {
     const cropBoxEl = this.shadowRoot.querySelector('.crop-box');
+    const canvas = this.shadowRoot.querySelector('#cropCanvas');
     
     if (cropBoxEl) {
-      cropBoxEl.style.left = `${this.cropBox.x}px`;
-      cropBoxEl.style.top = `${this.cropBox.y}px`;
+      // Get the actual position and dimensions of the canvas element
+      const canvasBounds = canvas.getBoundingClientRect();
+      const containerBounds = this.shadowRoot.querySelector('.canvas-container').getBoundingClientRect();
+      
+      // Calculate the offset from the container edges to the canvas
+      const offsetLeft = (containerBounds.width - canvasBounds.width) / 2;
+      const offsetTop = (containerBounds.height - canvasBounds.height) / 2;
+      
+      // Position the crop box relative to the canvas position
+      cropBoxEl.style.position = 'absolute';
+      cropBoxEl.style.left = `${offsetLeft + this.cropBox.x}px`;
+      cropBoxEl.style.top = `${offsetTop + this.cropBox.y}px`;
       cropBoxEl.style.width = `${this.cropBox.width}px`;
       cropBoxEl.style.height = `${this.cropBox.height}px`;
     }
