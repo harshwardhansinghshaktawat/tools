@@ -31,20 +31,40 @@ class WixPdfEditor extends HTMLElement {
     this.attachShadow({ mode: 'open' });
   }
   
-  // Called when the element is added to the DOM
   connectedCallback() {
     // Render the initial UI
     this.render();
     
-    // Load required libraries
-    this.loadLibraries().then(() => {
-      // Initialize event listeners
-      this.initializeEventListeners();
-      console.log('PDF Editor initialized successfully');
-    }).catch(error => {
-      console.error('Failed to initialize PDF Editor:', error);
-      this.showError('Failed to initialize the PDF Editor. Please refresh the page and try again.');
-    });
+    // Show loading indicator
+    this.showLoading(true);
+    
+    // Add an additional message to show initialization status
+    const loadingElement = this.shadowRoot.getElementById('loading');
+    if (loadingElement) {
+      const statusDiv = document.createElement('div');
+      statusDiv.id = 'loading-status';
+      statusDiv.style.marginTop = '15px';
+      statusDiv.style.textAlign = 'center';
+      statusDiv.textContent = 'Initializing libraries...';
+      loadingElement.appendChild(statusDiv);
+    }
+    
+    // Load external libraries one by one to avoid race conditions
+    this.loadExternalLibraries()
+      .then(() => {
+        this.showLoadingStatus('Libraries loaded successfully');
+        // Initialize event listeners
+        this.initializeEventListeners();
+        this.showLoadingStatus('PDF Editor initialized successfully');
+        this.showLoading(false);
+        console.log('PDF Editor initialized successfully');
+      })
+      .catch(error => {
+        console.error('Failed to initialize PDF Editor:', error);
+        this.showLoadingStatus('Error: ' + (error.message || 'Unknown error'));
+        this.showError('Failed to initialize the PDF Editor: ' + (error.message || 'Unknown error') + '. Please try again.');
+        this.showLoading(false);
+      });
   }
   
   // Render the UI
@@ -408,63 +428,101 @@ class WixPdfEditor extends HTMLElement {
     this.showLoading(true);
   }
   
-  // Method to load required libraries
-  loadLibraries() {
+  // Method to load libraries with a new approach to work in Wix environment
+  loadExternalLibraries() {
+    // Add a method to show loading status updates
+    this.showLoadingStatus = (message) => {
+      const statusElement = this.shadowRoot.getElementById('loading-status');
+      if (statusElement) {
+        statusElement.textContent = message;
+      }
+      console.log(`PDF Editor: ${message}`);
+    };
+    
     return new Promise(async (resolve, reject) => {
       try {
-        // Create script elements and load libraries
-        const createScript = (src) => {
+        // Function to load script and check if it's properly loaded
+        const loadScript = (url, globalVar, checkProperty) => {
+          this.showLoadingStatus(`Loading ${url.split('/').pop()}...`);
+          
           return new Promise((resolve, reject) => {
+            // Check if the library is already loaded
+            if (window[globalVar] && (!checkProperty || window[globalVar][checkProperty])) {
+              this.showLoadingStatus(`${globalVar} already loaded`);
+              resolve(true);
+              return;
+            }
+            
             const script = document.createElement('script');
-            script.src = src;
-            script.onload = resolve;
-            script.onerror = reject;
+            script.src = url;
+            script.async = true;
+            
+            script.onload = () => {
+              // Add a small delay to ensure the script is fully initialized
+              setTimeout(() => {
+                if (!window[globalVar]) {
+                  reject(new Error(`Failed to load ${globalVar} from ${url}`));
+                  return;
+                }
+                
+                if (checkProperty && !window[globalVar][checkProperty]) {
+                  reject(new Error(`${globalVar}.${checkProperty} not found after loading ${url}`));
+                  return;
+                }
+                
+                this.showLoadingStatus(`${globalVar} loaded successfully`);
+                resolve(true);
+              }, 200);
+            };
+            
+            script.onerror = () => {
+              reject(new Error(`Failed to load script: ${url}`));
+            };
+            
             document.head.appendChild(script);
           });
         };
         
-        // First, load PDF.js with its specific version
-        console.log('Loading PDF.js...');
-        await createScript('https://unpkg.com/pdfjs-dist@2.16.105/build/pdf.min.js');
-        
-        // Wait a moment to ensure script is fully initialized
-        await new Promise(resolve => setTimeout(resolve, 100));
-        
-        // Check if PDF.js was loaded properly
-        if (typeof window.pdfjsLib === 'undefined' || !window.pdfjsLib) {
-          console.error('PDF.js failed to initialize properly');
-          throw new Error('PDF.js failed to initialize properly');
+        // Begin loading libraries in sequence for reliability
+        try {
+          // 1. First load PDF.js (using a reliable version known to work in Wix)
+          await loadScript(
+            'https://mozilla.github.io/pdf.js/build/pdf.js',
+            'pdfjsLib',
+            'getDocument'
+          );
+          
+          // 2. Set the worker source for PDF.js
+          this.showLoadingStatus('Setting up PDF.js worker...');
+          window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://mozilla.github.io/pdf.js/build/pdf.worker.js';
+          
+          // 3. Load PDF-Lib
+          await loadScript(
+            'https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js',
+            'PDFLib'
+          );
+          
+          // 4. Load Fabric.js
+          await loadScript(
+            'https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js',
+            'fabric'
+          );
+          
+          // 5. Load jsPDF
+          await loadScript(
+            'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
+            'jspdf'
+          );
+          
+          this.showLoadingStatus('All libraries loaded successfully');
+          resolve();
+        } catch (error) {
+          this.showLoadingStatus(`Error loading libraries: ${error.message}`);
+          reject(error);
         }
-        
-        // Set up PDF.js worker
-        console.log('Setting up PDF.js worker...');
-        if (!window.pdfjsLib.GlobalWorkerOptions) {
-          window.pdfjsLib.GlobalWorkerOptions = {};
-        }
-        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@2.16.105/build/pdf.worker.min.js';
-        
-        // Verify that getDocument function exists
-        if (typeof window.pdfjsLib.getDocument !== 'function') {
-          console.error('PDF.js getDocument function not found');
-          throw new Error('PDF.js getDocument function not found');
-        }
-        
-        // Load other libraries in parallel
-        console.log('Loading remaining libraries...');
-        await Promise.all([
-          createScript('https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js'),
-          createScript('https://unpkg.com/fabric@5.3.1/dist/fabric.min.js'),
-          createScript('https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js')
-        ]);
-        
-        console.log('All libraries loaded successfully');
-        this.showLoading(false);
-        resolve();
-      } catch (error) {
-        console.error('Error loading libraries:', error);
-        this.showError('Failed to load required libraries. Please refresh the page and try again.');
-        this.showLoading(false);
-        reject(error);
+      } catch (outerError) {
+        this.showLoadingStatus(`Unexpected error: ${outerError.message}`);
+        reject(outerError);
       }
     });
   }
@@ -548,18 +606,16 @@ class WixPdfEditor extends HTMLElement {
     }
     
     this.showLoading(true);
+    this.showLoadingStatus('Reading PDF file...');
     
     try {
-      console.log('Reading PDF file...');
       // Verify PDF.js is loaded
-      if (!window.pdfjsLib) {
-        console.error('PDF.js library not loaded correctly');
+      if (typeof window.pdfjsLib === 'undefined' || !window.pdfjsLib) {
         throw new Error('PDF.js library not loaded correctly');
       }
       
       // Check if getDocument is available
       if (typeof window.pdfjsLib.getDocument !== 'function') {
-        console.error('PDF.js getDocument function not found');
         throw new Error('PDF.js getDocument function not found');
       }
 
@@ -567,14 +623,20 @@ class WixPdfEditor extends HTMLElement {
       const pdfBytes = new Uint8Array(arrayBuffer);
       this.currentPdfBytes = pdfBytes;
       
-      console.log('PDF file read successfully, creating document task...');
+      this.showLoadingStatus('Reading PDF data...');
       
-      // Load PDF using PDF.js - simpler approach first
-      const loadingTask = window.pdfjsLib.getDocument(pdfBytes);
+      // Use the Mozilla PDF.js version which is more reliable
+      let loadingTask;
+      try {
+        loadingTask = window.pdfjsLib.getDocument(pdfBytes);
+      } catch (pdfError) {
+        console.error('Error creating PDF document task:', pdfError);
+        // Try alternative approach if the first method fails
+        loadingTask = window.pdfjsLib.getDocument({ data: pdfBytes });
+      }
       
-      console.log('Waiting for PDF to load...');
+      this.showLoadingStatus('Loading PDF document...');
       this.pdfDocument = await loadingTask.promise;
-      console.log('PDF document loaded successfully');
       
       this.totalPages = this.pdfDocument.numPages;
       this.currentPage = 1;
@@ -585,14 +647,13 @@ class WixPdfEditor extends HTMLElement {
       // Hide the "no document" message
       this.shadowRoot.getElementById('no-document').classList.add('hidden');
       
-      // Render the first page
-      console.log('Rendering first page...');
+      this.showLoadingStatus('Rendering first page...');
       await this.renderPage();
       
-      // Extract text for later use
-      console.log('Extracting text from PDF...');
+      this.showLoadingStatus('Extracting text from PDF...');
       await this.extractTextFromPDF();
-      console.log('PDF loaded and processed successfully');
+      
+      this.showLoadingStatus('PDF loaded successfully');
       
     } catch (error) {
       console.error('Error loading PDF:', error);
@@ -1320,7 +1381,7 @@ class WixPdfEditor extends HTMLElement {
     });
   }
   
-  // Show loading indicator
+  // Method to show loading indicator and status messages
   showLoading(show) {
     const loading = this.shadowRoot.getElementById('loading');
     if (loading) {
@@ -1332,16 +1393,28 @@ class WixPdfEditor extends HTMLElement {
     }
   }
   
-  // Show error message
+  // Method to update loading status text
+  showLoadingStatus(message) {
+    const statusElement = this.shadowRoot.getElementById('loading-status');
+    if (statusElement) {
+      statusElement.textContent = message;
+    }
+    console.log(`PDF Editor: ${message}`);
+  }
+  
+  // Method to show error message
   showError(message) {
+    // First, try to hide the loading indicator
+    this.showLoading(false);
+    
     const noDocumentDiv = this.shadowRoot.getElementById('no-document');
     if (noDocumentDiv) {
+      noDocumentDiv.classList.remove('hidden');
       noDocumentDiv.innerHTML = `
         <p style="color: #ff3b30;">${message}</p>
         <p>Please ensure you have a stable internet connection and try again.</p>
         <button class="upload-btn" id="upload-prompt">Try Again</button>
       `;
-      noDocumentDiv.classList.remove('hidden');
       
       // Re-attach event listener to the new button
       const uploadPrompt = this.shadowRoot.getElementById('upload-prompt');
