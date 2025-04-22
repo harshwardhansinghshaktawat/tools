@@ -13,8 +13,13 @@ class ImageBackgroundRemover extends HTMLElement {
 
   // Lifecycle: When the element is connected to the DOM
   connectedCallback() {
-    this.render();
-    this.setupEventListeners();
+    try {
+      this.render();
+      this.setupEventListeners();
+    } catch (error) {
+      console.error('Error initializing ImageBackgroundRemover:', error);
+      this.shadowRoot.innerHTML = `<div style="color: red;">Failed to load background remover. Please check console for details.</div>`;
+    }
   }
 
   // Render the UI
@@ -24,6 +29,7 @@ class ImageBackgroundRemover extends HTMLElement {
         :host {
           display: block;
           max-width: 600px;
+          min-height: 400px; /* Ensure visibility */
           margin: 0 auto;
           font-family: Arial, sans-serif;
         }
@@ -32,6 +38,7 @@ class ImageBackgroundRemover extends HTMLElement {
           border: 1px solid #ddd;
           border-radius: 8px;
           background: #fff;
+          min-height: 350px; /* Prevent collapse */
         }
         .upload-area {
           border: 2px dashed #ccc;
@@ -126,6 +133,11 @@ class ImageBackgroundRemover extends HTMLElement {
     const processedImage = this.shadowRoot.getElementById('processedImage');
     const errorDiv = this.shadowRoot.getElementById('error');
     const toleranceInput = this.shadowRoot.getElementById('tolerance');
+
+    if (!uploadArea || !fileInput || !processButton || !downloadButton || !originalImage || !processedImage || !errorDiv || !toleranceInput) {
+      console.error('One or more DOM elements not found in ImageBackgroundRemover');
+      return;
+    }
 
     // Drag and drop
     uploadArea.addEventListener('dragover', (e) => {
@@ -282,4 +294,8 @@ class ImageBackgroundRemover extends HTMLElement {
 }
 
 // Register the custom element
-registerCustomElement('image-background-remover', ImageBackgroundRemover);
+try {
+  registerCustomElement('image-background-remover', ImageBackgroundRemover);
+} catch (error) {
+  console.error('Failed to register ImageBackgroundRemover:', error);
+}
