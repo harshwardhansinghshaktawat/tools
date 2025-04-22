@@ -12,6 +12,7 @@
  * - Zoom functionality
  * - Image filters and adjustments
  * - Download cropped image
+ * - Advanced output resizing
  * - Mobile-friendly design
  */
 
@@ -37,6 +38,12 @@ class WixImageCropper extends HTMLElement {
     this.currentAspectRatio = null; // null = free form
     this.originalFileType = null; // store original file type
     
+    // Advanced resize options
+    this.outputWidth = null;  // Final output width in pixels
+    this.outputHeight = null; // Final output height in pixels
+    this.maintainOutputRatio = true; // Whether to maintain aspect ratio during output resize
+    this.resizeQuality = 'high'; // Resize quality: low, medium, high
+    
     // Render the initial UI
     this.render();
   }
@@ -56,6 +63,7 @@ class WixImageCropper extends HTMLElement {
           { name: 'defaultAspectRatio', type: 'string', defaultValue: 'free' },
           { name: 'enableFilters', type: 'boolean', defaultValue: true },
           { name: 'enableRotation', type: 'boolean', defaultValue: true },
+          { name: 'enableAdvancedResize', type: 'boolean', defaultValue: true },
           { name: 'quality', type: 'number', defaultValue: 0.92 }
         ],
         events: [
@@ -416,6 +424,122 @@ class WixImageCropper extends HTMLElement {
           display: none !important;
         }
         
+        /* Advanced Resize Controls */
+        .advanced-resize-container {
+          border-top: 1px solid #eee;
+          padding-top: 16px;
+          margin-top: 8px;
+          width: 100%;
+        }
+        
+        .output-dimension-inputs {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-bottom: 8px;
+        }
+        
+        .output-dimensions-group {
+          display: flex;
+          flex-direction: row;
+          align-items: center;
+          gap: 12px;
+        }
+        
+        .dimension-input-group {
+          display: flex;
+          flex-direction: column;
+        }
+        
+        .dimension-input-group label {
+          font-size: 12px;
+          margin-bottom: 4px;
+          color: #666;
+        }
+        
+        .dimension-input {
+          width: 80px;
+          padding: 6px 8px;
+          border: 1px solid #ddd;
+          border-radius: 4px;
+          font-size: 14px;
+        }
+        
+        .maintain-ratio-checkbox {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          margin: 10px 0;
+        }
+        
+        .maintain-ratio-checkbox input {
+          margin: 0;
+        }
+        
+        .maintain-ratio-checkbox label {
+          font-size: 13px;
+          color: #333;
+        }
+        
+        .resize-presets-container {
+          margin-top: 12px;
+        }
+        
+        .resize-presets-container h5 {
+          margin: 0 0 8px 0;
+          font-size: 13px;
+          color: #666;
+          font-weight: normal;
+        }
+        
+        .resize-presets {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+        }
+        
+        .resize-quality-options {
+          margin-top: 12px;
+          display: flex;
+          gap: 8px;
+        }
+        
+        .toggle-advanced-resize {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          cursor: pointer;
+          padding: 4px 0;
+          user-select: none;
+        }
+        
+        .toggle-advanced-resize svg {
+          transition: transform 0.3s;
+          width: 16px;
+          height: 16px;
+        }
+        
+        .toggle-advanced-resize.collapsed svg {
+          transform: rotate(-90deg);
+        }
+        
+        .advanced-resize-controls {
+          overflow: hidden;
+          max-height: 1000px;
+          transition: max-height 0.3s ease-in-out;
+        }
+        
+        .advanced-resize-controls.collapsed {
+          max-height: 0;
+        }
+        
+        .output-size-preview {
+          margin-top: 8px;
+          font-size: 12px;
+          color: #666;
+        }
+        
+        /* Mobile responsive styles */
         @media (max-width: 768px) {
           .controls-panel {
             flex-direction: column;
@@ -425,11 +549,16 @@ class WixImageCropper extends HTMLElement {
           .control-group {
             width: 100%;
           }
+          
+          .output-dimensions-group {
+            flex-direction: column;
+            align-items: flex-start;
+          }
         }
       </style>
       
       <div class="cropper-container">
-                  <div class="upload-area">
+        <div class="upload-area">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
             <polyline points="17 8 12 3 7 8"></polyline>
@@ -525,6 +654,64 @@ class WixImageCropper extends HTMLElement {
                 <span class="slider-value" id="saturationValue">100%</span>
               </div>
             </div>
+            
+            <!-- Advanced Resize Controls -->
+            <div class="control-group" style="width: 100%;">
+              <div class="toggle-advanced-resize">
+                <h4>Advanced Resize</h4>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+              </div>
+              
+              <div class="advanced-resize-controls">
+                <div class="output-dimensions-group">
+                  <div class="dimension-input-group">
+                    <label for="outputWidth">Output Width (px)</label>
+                    <input type="number" id="outputWidth" class="dimension-input" min="1" placeholder="Auto">
+                  </div>
+                  
+                  <div class="dimension-input-group">
+                    <label for="outputHeight">Output Height (px)</label>
+                    <input type="number" id="outputHeight" class="dimension-input" min="1" placeholder="Auto">
+                  </div>
+                  
+                  <button class="control-btn" id="applyDimensions">Apply</button>
+                </div>
+                
+                <div class="maintain-ratio-checkbox">
+                  <input type="checkbox" id="maintainRatio" checked>
+                  <label for="maintainRatio">Maintain aspect ratio</label>
+                </div>
+                
+                <div class="output-size-preview">
+                  Cropped size: <span id="cropSizeInfo">0 × 0</span> px
+                  <br>
+                  Output size: <span id="outputSizeInfo">0 × 0</span> px
+                </div>
+                
+                <div class="resize-presets-container">
+                  <h5>Preset Dimensions</h5>
+                  <div class="resize-presets">
+                    <button class="control-btn preset-btn" data-width="1200" data-height="628">Facebook Post</button>
+                    <button class="control-btn preset-btn" data-width="1080" data-height="1080">Instagram</button>
+                    <button class="control-btn preset-btn" data-width="1200" data-height="675">Twitter</button>
+                    <button class="control-btn preset-btn" data-width="1280" data-height="720">HD (720p)</button>
+                    <button class="control-btn preset-btn" data-width="1920" data-height="1080">Full HD</button>
+                    <button class="control-btn preset-btn" data-width="2048" data-height="1152">2K</button>
+                  </div>
+                </div>
+                
+                <div class="resize-quality-container">
+                  <h5>Resize Quality</h5>
+                  <div class="resize-quality-options">
+                    <button class="control-btn quality-btn" data-quality="low">Low</button>
+                    <button class="control-btn quality-btn active" data-quality="medium">Medium</button>
+                    <button class="control-btn quality-btn" data-quality="high">High</button>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
           
           <div class="actions-panel">
@@ -560,6 +747,18 @@ class WixImageCropper extends HTMLElement {
     const customWidth = this.shadowRoot.querySelector('#customWidth');
     const customHeight = this.shadowRoot.querySelector('#customHeight');
     const applyCustomRatio = this.shadowRoot.querySelector('#applyCustomRatio');
+    
+    // Advanced resize elements
+    const toggleAdvancedResize = this.shadowRoot.querySelector('.toggle-advanced-resize');
+    const advancedResizeControls = this.shadowRoot.querySelector('.advanced-resize-controls');
+    const outputWidth = this.shadowRoot.querySelector('#outputWidth');
+    const outputHeight = this.shadowRoot.querySelector('#outputHeight');
+    const maintainRatio = this.shadowRoot.querySelector('#maintainRatio');
+    const applyDimensions = this.shadowRoot.querySelector('#applyDimensions');
+    const presetButtons = this.shadowRoot.querySelectorAll('.preset-btn');
+    const qualityButtons = this.shadowRoot.querySelectorAll('.quality-btn');
+    const cropSizeInfo = this.shadowRoot.querySelector('#cropSizeInfo');
+    const outputSizeInfo = this.shadowRoot.querySelector('#outputSizeInfo');
     
     // Upload area events
     uploadArea.addEventListener('dragover', (e) => {
@@ -709,6 +908,110 @@ class WixImageCropper extends HTMLElement {
       this.renderImage();
     });
     
+    // Advanced resize events
+    toggleAdvancedResize.addEventListener('click', () => {
+      toggleAdvancedResize.classList.toggle('collapsed');
+      advancedResizeControls.classList.toggle('collapsed');
+    });
+    
+    // Update size info on crop box changes
+    this.shadowRoot.addEventListener('mousemove', () => {
+      if (this.image) {
+        this.updateSizeInfo();
+      }
+    });
+    
+    this.shadowRoot.addEventListener('touchmove', () => {
+      if (this.image) {
+        this.updateSizeInfo();
+      }
+    });
+    
+    // Maintain aspect ratio when changing dimensions
+    outputWidth.addEventListener('input', () => {
+      if (maintainRatio.checked && outputWidth.value && this.cropBox.width > 0 && this.cropBox.height > 0) {
+        const aspectRatio = this.cropBox.width / this.cropBox.height;
+        const newWidth = parseInt(outputWidth.value);
+        
+        if (!isNaN(newWidth) && newWidth > 0) {
+          outputHeight.value = Math.round(newWidth / aspectRatio);
+          this.updateSizeInfo();
+        }
+      }
+    });
+    
+    outputHeight.addEventListener('input', () => {
+      if (maintainRatio.checked && outputHeight.value && this.cropBox.width > 0 && this.cropBox.height > 0) {
+        const aspectRatio = this.cropBox.width / this.cropBox.height;
+        const newHeight = parseInt(outputHeight.value);
+        
+        if (!isNaN(newHeight) && newHeight > 0) {
+          outputWidth.value = Math.round(newHeight * aspectRatio);
+          this.updateSizeInfo();
+        }
+      }
+    });
+    
+    // Apply output dimensions
+    applyDimensions.addEventListener('click', () => {
+      const width = parseInt(outputWidth.value);
+      const height = parseInt(outputHeight.value);
+      
+      if ((width > 0 && height > 0) || (width > 0 && !height) || (!width && height > 0)) {
+        this.outputWidth = width || null;
+        this.outputHeight = height || null;
+        this.updateSizeInfo();
+      } else {
+        // Reset to null if both are invalid
+        this.outputWidth = null;
+        this.outputHeight = null;
+        outputWidth.value = '';
+        outputHeight.value = '';
+        this.updateSizeInfo();
+      }
+    });
+    
+    // Preset dimension buttons
+    presetButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const width = parseInt(btn.getAttribute('data-width'));
+        const height = parseInt(btn.getAttribute('data-height'));
+        
+        outputWidth.value = width;
+        outputHeight.value = height;
+        
+        this.outputWidth = width;
+        this.outputHeight = height;
+        
+        // If maintain ratio is checked, and we have a crop box, adjust the crop box
+        if (maintainRatio.checked && this.cropBox.width > 0 && this.cropBox.height > 0) {
+          const targetRatio = width / height;
+          
+          // Set the aspect ratio to match the preset
+          this.setAspectRatio(`${width}:${height}`);
+          
+          // Update custom ratio inputs
+          customWidth.value = width;
+          customHeight.value = height;
+          
+          // Update aspect ratio buttons
+          aspectButtons.forEach(b => b.classList.remove('active'));
+        }
+        
+        this.updateSizeInfo();
+      });
+    });
+    
+    // Quality buttons
+    qualityButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        qualityButtons.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        
+        this.resizeQuality = btn.getAttribute('data-quality');
+      });
+    });
+    
     // Action buttons
     cancelBtn.addEventListener('click', () => {
       this.resetCropper();
@@ -739,6 +1042,7 @@ class WixImageCropper extends HTMLElement {
           }
           this.constrainCropBox();
           this.updateCropBox();
+          this.updateSizeInfo();
           break;
         case 'ArrowRight':
           // Move crop box right
@@ -749,6 +1053,7 @@ class WixImageCropper extends HTMLElement {
           }
           this.constrainCropBox();
           this.updateCropBox();
+          this.updateSizeInfo();
           break;
         case 'ArrowUp':
           // Move crop box up
@@ -759,6 +1064,7 @@ class WixImageCropper extends HTMLElement {
           }
           this.constrainCropBox();
           this.updateCropBox();
+          this.updateSizeInfo();
           break;
         case 'ArrowDown':
           // Move crop box down
@@ -769,6 +1075,7 @@ class WixImageCropper extends HTMLElement {
           }
           this.constrainCropBox();
           this.updateCropBox();
+          this.updateSizeInfo();
           break;
         case 'r':
           // Rotate right
@@ -921,6 +1228,16 @@ class WixImageCropper extends HTMLElement {
       });
     }
     
+    // Set initial output dimensions to match the crop box
+    const outputWidth = this.shadowRoot.querySelector('#outputWidth');
+    const outputHeight = this.shadowRoot.querySelector('#outputHeight');
+    
+    outputWidth.value = Math.round(this.cropBox.width);
+    outputHeight.value = Math.round(this.cropBox.height);
+    
+    this.outputWidth = Math.round(this.cropBox.width);
+    this.outputHeight = Math.round(this.cropBox.height);
+    
     // Flag for first render animation
     this.isFirstRender = true;
     
@@ -966,6 +1283,38 @@ class WixImageCropper extends HTMLElement {
     
     // Render the image and crop box
     this.renderImage();
+    
+    // Update size info
+    this.updateSizeInfo();
+  }
+
+  updateSizeInfo() {
+    if (!this.image) return;
+    
+    const cropSizeInfo = this.shadowRoot.querySelector('#cropSizeInfo');
+    const outputSizeInfo = this.shadowRoot.querySelector('#outputSizeInfo');
+    
+    // Update cropped size info
+    const cropWidth = Math.round(this.cropBox.width);
+    const cropHeight = Math.round(this.cropBox.height);
+    cropSizeInfo.textContent = `${cropWidth} × ${cropHeight}`;
+    
+    // Update output size info
+    const outputWidth = this.outputWidth || cropWidth;
+    const outputHeight = this.outputHeight || cropHeight;
+    outputSizeInfo.textContent = `${outputWidth} × ${outputHeight}`;
+    
+    // Update actual output input fields if they're empty
+    const outputWidthInput = this.shadowRoot.querySelector('#outputWidth');
+    const outputHeightInput = this.shadowRoot.querySelector('#outputHeight');
+    
+    if (!outputWidthInput.value) {
+      outputWidthInput.value = cropWidth;
+    }
+    
+    if (!outputHeightInput.value) {
+      outputHeightInput.value = cropHeight;
+    }
   }
 
   renderImage() {
@@ -1127,6 +1476,9 @@ class WixImageCropper extends HTMLElement {
           }, 300);
         }, 100);
       }
+      
+      // Update size information
+      this.updateSizeInfo();
     }, 0);
   }
 
@@ -1188,6 +1540,31 @@ class WixImageCropper extends HTMLElement {
       
       // Update the UI
       this.updateCropBox();
+      
+      // Update size info
+      this.updateSizeInfo();
+      
+      // Update output dimensions if "maintain ratio" is checked
+      const maintainRatio = this.shadowRoot.querySelector('#maintainRatio');
+      if (maintainRatio.checked) {
+        // Set output dimensions to match new crop box dimensions
+        const outputWidth = this.shadowRoot.querySelector('#outputWidth');
+        const outputHeight = this.shadowRoot.querySelector('#outputHeight');
+        
+        if (this.outputWidth && this.outputHeight) {
+          // If output dimensions are already set, adjust them to maintain the new aspect ratio
+          this.outputHeight = Math.round(this.outputWidth / aspectRatio);
+          outputHeight.value = this.outputHeight;
+        } else {
+          // Otherwise set them to match the crop box
+          outputWidth.value = Math.round(this.cropBox.width);
+          outputHeight.value = Math.round(this.cropBox.height);
+          this.outputWidth = Math.round(this.cropBox.width);
+          this.outputHeight = Math.round(this.cropBox.height);
+        }
+        
+        this.updateSizeInfo();
+      }
     }
   }
 
@@ -1240,8 +1617,10 @@ class WixImageCropper extends HTMLElement {
   onMouseMove(e) {
     if (this.isDragging) {
       this.drag(e);
+      this.updateSizeInfo();
     } else if (this.isResizing) {
       this.resize(e);
+      this.updateSizeInfo();
     }
   }
 
@@ -1257,8 +1636,10 @@ class WixImageCropper extends HTMLElement {
       
       if (this.isDragging) {
         this.drag(moveEvent);
+        this.updateSizeInfo();
       } else if (this.isResizing) {
         this.resize(moveEvent);
+        this.updateSizeInfo();
       }
     }
   }
@@ -1367,6 +1748,29 @@ class WixImageCropper extends HTMLElement {
     
     // Update the UI
     this.updateCropBox();
+    
+    // Update output dimensions if maintain ratio is checked
+    const maintainRatio = this.shadowRoot.querySelector('#maintainRatio');
+    if (maintainRatio.checked) {
+      const outputWidth = this.shadowRoot.querySelector('#outputWidth');
+      const outputHeight = this.shadowRoot.querySelector('#outputHeight');
+      
+      if (this.outputWidth && this.outputHeight) {
+        // Calculate the aspect ratio of the current crop box
+        const aspectRatio = this.cropBox.width / this.cropBox.height;
+        
+        // Decide which dimension to keep fixed based on which was changed last
+        if (this.lastChangedDimension === 'width') {
+          this.outputHeight = Math.round(this.outputWidth / aspectRatio);
+          outputHeight.value = this.outputHeight;
+        } else {
+          this.outputWidth = Math.round(this.outputHeight * aspectRatio);
+          outputWidth.value = this.outputWidth;
+        }
+        
+        this.updateSizeInfo();
+      }
+    }
   }
 
   constrainCropBox() {
@@ -1378,11 +1782,43 @@ class WixImageCropper extends HTMLElement {
     
     // Ensure crop box doesn't exceed canvas size
     if (this.cropBox.x + this.cropBox.width > canvas.width) {
-      this.cropBox.x = canvas.width - this.cropBox.width;
+      if (this.currentAspectRatio) {
+        // If aspect ratio is locked, we need to reduce the size to fit
+        const [width, height] = this.currentAspectRatio.split(':').map(Number);
+        const aspectRatio = width / height;
+        
+        this.cropBox.width = canvas.width - this.cropBox.x;
+        this.cropBox.height = this.cropBox.width / aspectRatio;
+        
+        // Check if this causes the height to exceed canvas height, if so adjust again
+        if (this.cropBox.y + this.cropBox.height > canvas.height) {
+          this.cropBox.height = canvas.height - this.cropBox.y;
+          this.cropBox.width = this.cropBox.height * aspectRatio;
+          this.cropBox.x = canvas.width - this.cropBox.width;
+        }
+      } else {
+        this.cropBox.x = canvas.width - this.cropBox.width;
+      }
     }
     
     if (this.cropBox.y + this.cropBox.height > canvas.height) {
-      this.cropBox.y = canvas.height - this.cropBox.height;
+      if (this.currentAspectRatio) {
+        // If aspect ratio is locked, we may need to adjust the width too
+        const [width, height] = this.currentAspectRatio.split(':').map(Number);
+        const aspectRatio = width / height;
+        
+        this.cropBox.height = canvas.height - this.cropBox.y;
+        this.cropBox.width = this.cropBox.height * aspectRatio;
+        
+        // Check if this causes the width to exceed canvas width, if so adjust again
+        if (this.cropBox.x + this.cropBox.width > canvas.width) {
+          this.cropBox.width = canvas.width - this.cropBox.x;
+          this.cropBox.height = this.cropBox.width / aspectRatio;
+          this.cropBox.y = canvas.height - this.cropBox.height;
+        }
+      } else {
+        this.cropBox.y = canvas.height - this.cropBox.height;
+      }
     }
   }
 
@@ -1391,19 +1827,61 @@ class WixImageCropper extends HTMLElement {
     const croppedCanvas = document.createElement('canvas');
     const ctx = croppedCanvas.getContext('2d');
     
-    // Set dimensions of the output canvas
-    croppedCanvas.width = this.cropBox.width;
-    croppedCanvas.height = this.cropBox.height;
+    // Set initial dimensions of the output canvas to match the crop box
+    let outputWidth = this.cropBox.width;
+    let outputHeight = this.cropBox.height;
+    
+    // If output dimensions are specified, use those instead
+    if (this.outputWidth && this.outputHeight) {
+      outputWidth = this.outputWidth;
+      outputHeight = this.outputHeight;
+    } else if (this.outputWidth) {
+      // Only width specified, calculate height to maintain aspect ratio
+      const aspectRatio = this.cropBox.width / this.cropBox.height;
+      outputHeight = this.outputWidth / aspectRatio;
+    } else if (this.outputHeight) {
+      // Only height specified, calculate width to maintain aspect ratio
+      const aspectRatio = this.cropBox.width / this.cropBox.height;
+      outputWidth = this.outputHeight * aspectRatio;
+    }
+    
+    croppedCanvas.width = outputWidth;
+    croppedCanvas.height = outputHeight;
     
     // Get the source canvas
     const sourceCanvas = this.shadowRoot.querySelector('#cropCanvas');
     
-    // Draw the cropped portion
-    ctx.drawImage(
-      sourceCanvas,
-      this.cropBox.x, this.cropBox.y, this.cropBox.width, this.cropBox.height,
-      0, 0, this.cropBox.width, this.cropBox.height
-    );
+    // Apply high-quality resize algorithm if specified
+    if (this.resizeQuality === 'high' && 
+        (outputWidth !== this.cropBox.width || outputHeight !== this.cropBox.height)) {
+      // Create a temporary canvas for the cropped portion
+      const tempCanvas = document.createElement('canvas');
+      const tempCtx = tempCanvas.getContext('2d');
+      
+      tempCanvas.width = this.cropBox.width;
+      tempCanvas.height = this.cropBox.height;
+      
+      // Draw the cropped portion to the temp canvas
+      tempCtx.drawImage(
+        sourceCanvas,
+        this.cropBox.x, this.cropBox.y, this.cropBox.width, this.cropBox.height,
+        0, 0, this.cropBox.width, this.cropBox.height
+      );
+      
+      // Apply high-quality resizing
+      this.highQualityResize(tempCanvas, croppedCanvas);
+    } else {
+      // Standard resize (medium/low quality)
+      ctx.imageSmoothingEnabled = this.resizeQuality !== 'low';
+      ctx.imageSmoothingQuality = this.resizeQuality === 'medium' ? 'medium' : 'low';
+      
+      // Draw the cropped portion with resizing
+      ctx.drawImage(
+        sourceCanvas,
+        this.cropBox.x, this.cropBox.y, this.cropBox.width, this.cropBox.height,
+        0, 0, outputWidth, outputHeight
+      );
+    }
     
     // Show visual feedback - flash the crop area
     const cropBox = this.shadowRoot.querySelector('.crop-box');
@@ -1456,12 +1934,19 @@ class WixImageCropper extends HTMLElement {
     previewLabel.style.marginBottom = '5px';
     previewLabel.style.color = '#333';
     
+    const sizeInfo = document.createElement('div');
+    sizeInfo.textContent = `${outputWidth} × ${outputHeight} px`;
+    sizeInfo.style.fontSize = '10px';
+    sizeInfo.style.marginBottom = '5px';
+    sizeInfo.style.color = '#666';
+    
     const previewImg = document.createElement('img');
     previewImg.style.maxWidth = '150px';
     previewImg.style.maxHeight = '100px';
     previewImg.style.display = 'block';
     
     previewContainer.appendChild(previewLabel);
+    previewContainer.appendChild(sizeInfo);
     previewContainer.appendChild(previewImg);
     
     // Get image data URL
@@ -1492,6 +1977,58 @@ class WixImageCropper extends HTMLElement {
     }, 2000);
     
     return dataURL;
+  }
+
+  // High-quality resizing algorithm using multiple passes
+  highQualityResize(sourceCanvas, targetCanvas) {
+    const sourceWidth = sourceCanvas.width;
+    const sourceHeight = sourceCanvas.height;
+    const targetWidth = targetCanvas.width;
+    const targetHeight = targetCanvas.height;
+    
+    // If target is larger than source, just use direct scaling
+    if (targetWidth > sourceWidth && targetHeight > sourceHeight) {
+      const ctx = targetCanvas.getContext('2d');
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(sourceCanvas, 0, 0, targetWidth, targetHeight);
+      return;
+    }
+    
+    // Calculate the number of steps for progressive scaling
+    const scaleFactor = Math.min(targetWidth / sourceWidth, targetHeight / sourceHeight);
+    const steps = Math.ceil(Math.log(scaleFactor) / Math.log(0.5));
+    
+    // Create temporary canvas for multi-step downsampling
+    let tempCanvas = document.createElement('canvas');
+    let tempCtx = tempCanvas.getContext('2d');
+    tempCanvas.width = sourceWidth;
+    tempCanvas.height = sourceHeight;
+    tempCtx.drawImage(sourceCanvas, 0, 0);
+    
+    // Progressive downsampling
+    for (let i = 0; i < steps; i++) {
+      const stepWidth = i === steps - 1 ? targetWidth : Math.round(sourceWidth * Math.pow(0.5, i + 1));
+      const stepHeight = i === steps - 1 ? targetHeight : Math.round(sourceHeight * Math.pow(0.5, i + 1));
+      
+      const nextCanvas = document.createElement('canvas');
+      const nextCtx = nextCanvas.getContext('2d');
+      nextCanvas.width = stepWidth;
+      nextCanvas.height = stepHeight;
+      
+      // Apply Lanczos or bilinear filtering via browser's built-in scaling
+      nextCtx.imageSmoothingEnabled = true;
+      nextCtx.imageSmoothingQuality = 'high';
+      nextCtx.drawImage(tempCanvas, 0, 0, stepWidth, stepHeight);
+      
+      // Replace temp canvas with the new scaled version
+      tempCanvas = nextCanvas;
+      tempCtx = nextCtx;
+    }
+    
+    // Draw final result to target canvas
+    const targetCtx = targetCanvas.getContext('2d');
+    targetCtx.drawImage(tempCanvas, 0, 0);
   }
 
   downloadImage(dataURL) {
@@ -1527,7 +2064,22 @@ class WixImageCropper extends HTMLElement {
       }
     }
     
-    link.download = `cropped-image-${Date.now()}.${fileExtension}`;
+    // Include output dimensions in filename
+    let outputWidth = this.cropBox.width;
+    let outputHeight = this.cropBox.height;
+    
+    if (this.outputWidth && this.outputHeight) {
+      outputWidth = this.outputWidth;
+      outputHeight = this.outputHeight;
+    } else if (this.outputWidth) {
+      const aspectRatio = this.cropBox.width / this.cropBox.height;
+      outputHeight = Math.round(this.outputWidth / aspectRatio);
+    } else if (this.outputHeight) {
+      const aspectRatio = this.cropBox.width / this.cropBox.height;
+      outputWidth = Math.round(this.outputHeight * aspectRatio);
+    }
+    
+    link.download = `cropped-image-${outputWidth}x${outputHeight}-${Date.now()}.${fileExtension}`;
     link.click();
   }
 
@@ -1543,6 +2095,11 @@ class WixImageCropper extends HTMLElement {
     this.contrast = 100;
     this.saturation = 100;
     this.currentAspectRatio = null;
+    
+    // Reset advanced resize options
+    this.outputWidth = null;
+    this.outputHeight = null;
+    this.resizeQuality = 'high';
     
     // Reset UI
     const container = this.shadowRoot.querySelector('.cropper-container');
@@ -1567,6 +2124,26 @@ class WixImageCropper extends HTMLElement {
     aspectButtons.forEach(btn => {
       btn.classList.toggle('active', btn.getAttribute('data-aspect') === 'free');
     });
+    
+    // Reset advanced resize controls
+    this.shadowRoot.querySelector('#outputWidth').value = '';
+    this.shadowRoot.querySelector('#outputHeight').value = '';
+    this.shadowRoot.querySelector('#maintainRatio').checked = true;
+    
+    // Reset quality buttons
+    const qualityButtons = this.shadowRoot.querySelectorAll('.quality-btn');
+    qualityButtons.forEach(btn => {
+      btn.classList.toggle('active', btn.getAttribute('data-quality') === 'high');
+    });
+    
+    // Reset advanced resize toggle if it was open
+    const toggleAdvancedResize = this.shadowRoot.querySelector('.toggle-advanced-resize');
+    const advancedResizeControls = this.shadowRoot.querySelector('.advanced-resize-controls');
+    
+    if (!toggleAdvancedResize.classList.contains('collapsed')) {
+      toggleAdvancedResize.classList.add('collapsed');
+      advancedResizeControls.classList.add('collapsed');
+    }
   }
 }
 
