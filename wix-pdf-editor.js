@@ -553,7 +553,14 @@ class WixPdfEditor extends HTMLElement {
       console.log('Reading PDF file...');
       // Verify PDF.js is loaded
       if (!window.pdfjsLib) {
+        console.error('PDF.js library not loaded correctly');
         throw new Error('PDF.js library not loaded correctly');
+      }
+      
+      // Check if getDocument is available
+      if (typeof window.pdfjsLib.getDocument !== 'function') {
+        console.error('PDF.js getDocument function not found');
+        throw new Error('PDF.js getDocument function not found');
       }
 
       const arrayBuffer = await file.arrayBuffer();
@@ -562,12 +569,8 @@ class WixPdfEditor extends HTMLElement {
       
       console.log('PDF file read successfully, creating document task...');
       
-      // Load PDF using PDF.js with explicit version
-      const loadingTask = window.pdfjsLib.getDocument({
-        data: pdfBytes,
-        cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/cmaps/',
-        cMapPacked: true,
-      });
+      // Load PDF using PDF.js - simpler approach first
+      const loadingTask = window.pdfjsLib.getDocument(pdfBytes);
       
       console.log('Waiting for PDF to load...');
       this.pdfDocument = await loadingTask.promise;
