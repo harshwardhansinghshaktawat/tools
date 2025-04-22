@@ -423,19 +423,38 @@ class WixPdfEditor extends HTMLElement {
           });
         };
         
+        // First, load PDF.js with its specific version
         console.log('Loading PDF.js...');
-        await createScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js');
+        await createScript('https://unpkg.com/pdfjs-dist@2.16.105/build/pdf.min.js');
         
+        // Wait a moment to ensure script is fully initialized
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        // Check if PDF.js was loaded properly
+        if (typeof window.pdfjsLib === 'undefined' || !window.pdfjsLib) {
+          console.error('PDF.js failed to initialize properly');
+          throw new Error('PDF.js failed to initialize properly');
+        }
+        
+        // Set up PDF.js worker
         console.log('Setting up PDF.js worker...');
-        window.pdfjsLib = window.pdfjsLib || {};
-        window.pdfjsLib.GlobalWorkerOptions = window.pdfjsLib.GlobalWorkerOptions || {};
-        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+        if (!window.pdfjsLib.GlobalWorkerOptions) {
+          window.pdfjsLib.GlobalWorkerOptions = {};
+        }
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@2.16.105/build/pdf.worker.min.js';
         
+        // Verify that getDocument function exists
+        if (typeof window.pdfjsLib.getDocument !== 'function') {
+          console.error('PDF.js getDocument function not found');
+          throw new Error('PDF.js getDocument function not found');
+        }
+        
+        // Load other libraries in parallel
         console.log('Loading remaining libraries...');
         await Promise.all([
-          createScript('https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js'),
-          createScript('https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js'),
-          createScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js')
+          createScript('https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js'),
+          createScript('https://unpkg.com/fabric@5.3.1/dist/fabric.min.js'),
+          createScript('https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js')
         ]);
         
         console.log('All libraries loaded successfully');
