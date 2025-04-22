@@ -13,34 +13,51 @@
 
 (function() {
   // Load required libraries
-  const LIBRARIES = [
-    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js',
-    'https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js',
-    'https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js',
-    'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'
-  ];
+  const LIBRARIES = {
+    pdfjs: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js',
+    pdfworker: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js',
+    pdflib: 'https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js',
+    fabric: 'https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js',
+    jspdf: 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'
+  };
 
   function loadScript(url) {
     return new Promise((resolve, reject) => {
       const script = document.createElement('script');
       script.src = url;
       script.onload = resolve;
-      script.onerror = reject;
+      script.onerror = (e) => {
+        console.error(`Failed to load script: ${url}`, e);
+        reject(e);
+      };
       document.head.appendChild(script);
     });
   }
 
   async function loadLibraries() {
     try {
-      for (const lib of LIBRARIES) {
-        await loadScript(lib);
-      }
-      // Set up PDF.js worker
-      if (window.pdfjsLib) {
-        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
-      }
+      console.log('Loading PDF.js...');
+      await loadScript(LIBRARIES.pdfjs);
+      
+      console.log('Setting up PDF.js worker...');
+      // Must set the worker before loading other libraries
+      window.pdfjsLib = window.pdfjsLib || {};
+      window.pdfjsLib.GlobalWorkerOptions = window.pdfjsLib.GlobalWorkerOptions || {};
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = LIBRARIES.pdfworker;
+      
+      console.log('Loading remaining libraries...');
+      // Load the rest of the libraries in parallel
+      await Promise.all([
+        loadScript(LIBRARIES.pdflib),
+        loadScript(LIBRARIES.fabric),
+        loadScript(LIBRARIES.jspdf)
+      ]);
+      
+      console.log('All libraries loaded successfully');
+      return true;
     } catch (error) {
       console.error('Error loading libraries:', error);
+      return false;
     }
   }
 
@@ -85,9 +102,39 @@
     }
     
     async connectedCallback() {
-      await loadLibraries();
       this.render();
-      this.initializeEventListeners();
+      
+      try {
+        // Show loading indicator
+        this.showLoading(true);
+        
+        // Load required libraries first
+        const librariesLoaded = await loadLibraries();
+        if (!librariesLoaded) {
+          throw new Error('Failed to load required libraries. Please refresh the page and try again.');
+        }
+        
+        // Initialize event listeners after libraries are loaded
+        this.initializeEventListeners();
+        console.log('PDF Editor initialized successfully');
+      } catch (error) {
+        console.error('Failed to initialize PDF Editor:', error);
+        this.showError('Failed to initialize the PDF Editor. Please refresh the page and try again.');
+      } finally {
+        this.showLoading(false);
+      }
+    }
+    
+    showError(message) {
+      const noDocumentDiv = this.shadowRoot.getElementById('no-document');
+      if (noDocumentDiv) {
+        noDocumentDiv.innerHTML = `
+          <p style="color: #ff3b30;">${message}</p>
+          <p>Please ensure you have a stable internet connection and try again.</p>
+        `;
+      } else {
+        alert(message);
+      }
     }
     
     render() {
@@ -596,13 +643,30 @@
       this.showLoading(true);
       
       try {
+        console.log('Reading PDF file...');
+        // Verify PDF.js is loaded
+        if (!window.pdfjsLib) {
+          console.error('PDF.js library not loaded correctly');
+          throw new Error('PDF.js library not loaded correctly. Please refresh the page and try again.');
+        }
+
         const arrayBuffer = await file.arrayBuffer();
         const pdfBytes = new Uint8Array(arrayBuffer);
         this.currentPdfBytes = pdfBytes;
         
-        // Load PDF using PDF.js
-        const loadingTask = pdfjsLib.getDocument({ data: pdfBytes });
+        console.log('PDF file read successfully, creating document task...');
+        
+        // Load PDF using PDF.js with explicit version
+        const loadingTask = window.pdfjsLib.getDocument({
+          data: pdfBytes,
+          cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/cmaps/',
+          cMapPacked: true,
+          enableXfa: true
+        });
+        
+        console.log('Waiting for PDF to load...');
         this.pdfDocument = await loadingTask.promise;
+        console.log('PDF document loaded successfully');
         
         this.totalPages = this.pdfDocument.numPages;
         this.currentPage = 1;
@@ -614,27 +678,41 @@
         this.shadowRoot.getElementById('no-document').classList.add('hidden');
         
         // Render the first page
+        console.log('Rendering first page...');
         await this.renderPage();
         
         // Extract text for later use
+        console.log('Extracting text from PDF...');
         await this.extractTextFromPDF();
+        console.log('PDF loaded and processed successfully');
         
       } catch (error) {
         console.error('Error loading PDF:', error);
-        alert('Failed to load the PDF file. Please try again.');
+        alert(`Failed to load the PDF file: ${error.message || 'Unknown error'}`);
       } finally {
         this.showLoading(false);
       }
     }
     
     async renderPage() {
-      if (!this.pdfDocument) return;
+      if (!this.pdfDocument) {
+        console.warn('No PDF document loaded yet');
+        return;
+      }
       
       this.showLoading(true);
       
       try {
+        console.log(`Rendering page ${this.currentPage}...`);
+        
+        // Verify fabric.js is loaded
+        if (typeof fabric === 'undefined') {
+          throw new Error('Fabric.js library not loaded correctly');
+        }
+        
         // Get the page
         const page = await this.pdfDocument.getPage(this.currentPage);
+        console.log('PDF page fetched successfully');
         
         // Calculate dimensions
         const viewport = page.getViewport({ scale: this.scale });
@@ -669,29 +747,42 @@
         fabricCanvas.height = canvasHeight;
         newContainer.appendChild(fabricCanvas);
         
+        // Get 2D context with alpha composite
+        const pdfContext = pdfCanvas.getContext('2d', { alpha: false });
+        pdfContext.fillStyle = 'white';
+        pdfContext.fillRect(0, 0, canvasWidth, canvasHeight);
+        
         // Render PDF page on canvas
+        console.log('Starting PDF rendering...');
         const renderContext = {
-          canvasContext: pdfCanvas.getContext('2d'),
-          viewport
+          canvasContext: pdfContext,
+          viewport: viewport,
+          enableWebGL: true
         };
         
         await page.render(renderContext).promise;
+        console.log('PDF page rendered successfully');
         
         // Initialize Fabric.js canvas
+        console.log('Initializing Fabric.js canvas...');
         this.fabricCanvas = new fabric.Canvas('fabric-canvas', {
           width: canvasWidth,
-          height: canvasHeight
+          height: canvasHeight,
+          preserveObjectStacking: true,
+          selection: true,
+          interactive: true
         });
         
         // Setup fabric canvas event listeners
         this.setupFabricEventListeners();
+        console.log('Fabric canvas initialized');
         
         // Save initial state
         this.saveCurrentState();
         
       } catch (error) {
         console.error('Error rendering page:', error);
-        alert('Failed to render the PDF page. Please try again.');
+        this.showError(`Failed to render the PDF page: ${error.message || 'Unknown error'}`);
       } finally {
         this.showLoading(false);
       }
