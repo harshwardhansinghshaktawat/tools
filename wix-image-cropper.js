@@ -8,6 +8,7 @@
  * - Image upload with drag and drop
  * - Interactive cropping interface with resize/move
  * - Multiple aspect ratio options
+ * - 20 unique crop shapes (circle, heart, star, etc.)
  * - Rotation and flipping capabilities
  * - Zoom functionality
  * - Image filters and adjustments
@@ -37,6 +38,7 @@ class WixImageCropper extends HTMLElement {
     this.saturation = 100;
     this.currentAspectRatio = null; // null = free form
     this.originalFileType = null; // store original file type
+    this.currentShape = 'rectangle'; // Default shape
     
     // Advanced resize options
     this.outputWidth = null;  // Final output width in pixels
@@ -61,9 +63,11 @@ class WixImageCropper extends HTMLElement {
           { name: 'allowedFileTypes', type: 'string', defaultValue: 'image/jpeg,image/png,image/gif' },
           { name: 'maxFileSize', type: 'number', defaultValue: 5 }, // in MB
           { name: 'defaultAspectRatio', type: 'string', defaultValue: 'free' },
+          { name: 'defaultShape', type: 'string', defaultValue: 'rectangle' },
           { name: 'enableFilters', type: 'boolean', defaultValue: true },
           { name: 'enableRotation', type: 'boolean', defaultValue: true },
           { name: 'enableAdvancedResize', type: 'boolean', defaultValue: true },
+          { name: 'enableShapes', type: 'boolean', defaultValue: true },
           { name: 'quality', type: 'number', defaultValue: 0.92 }
         ],
         events: [
@@ -94,6 +98,90 @@ class WixImageCropper extends HTMLElement {
         
         * {
           box-sizing: border-box;
+        }
+        
+        /* Shape Classes for Crop Mask */
+        .shape-mask {
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          pointer-events: none;
+        }
+        
+        .crop-box.circle {
+          border-radius: 50%;
+        }
+        
+        .crop-box.rounded-square {
+          border-radius: 15%;
+        }
+        
+        .crop-box.rounded-rectangle {
+          border-radius: 10%;
+        }
+        
+        /* Hide default crop box border when using SVG shapes */
+        .crop-box.custom-shape {
+          border: none;
+        }
+        
+        /* Shape Gallery */
+        .shapes-gallery {
+          display: grid;
+          grid-template-columns: repeat(5, 1fr);
+          gap: 8px;
+          max-height: 220px;
+          overflow-y: auto;
+          padding: 8px 0;
+          margin-top: 8px;
+        }
+        
+        .shape-item {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          cursor: pointer;
+          padding: 6px;
+          border-radius: 4px;
+          transition: all 0.2s;
+          background: #f5f5f5;
+          border: 1px solid #ddd;
+        }
+        
+        .shape-item:hover {
+          background-color: #e5e5e5;
+        }
+        
+        .shape-item.active {
+          background-color: #0078d4;
+          border-color: #0078d4;
+          color: white;
+        }
+        
+        .shape-preview {
+          width: 40px;
+          height: 40px;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          margin-bottom: 4px;
+        }
+        
+        .shape-preview svg {
+          width: 36px;
+          height: 36px;
+          fill: currentColor;
+        }
+        
+        .shape-name {
+          font-size: 11px;
+          text-align: center;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          max-width: 100%;
         }
         
         .cropper-container {
@@ -576,6 +664,7 @@ class WixImageCropper extends HTMLElement {
             <canvas id="cropCanvas"></canvas>
             <div class="crop-overlay">
               <div class="crop-box">
+                <div class="shape-mask"></div>
                 <div class="crop-handle tl"></div>
                 <div class="crop-handle tr"></div>
                 <div class="crop-handle bl"></div>
@@ -620,6 +709,166 @@ class WixImageCropper extends HTMLElement {
                 <button class="control-btn" id="rotateRight">↻</button>
                 <button class="control-btn" id="flipH">↔</button>
                 <button class="control-btn" id="flipV">↕</button>
+              </div>
+            </div>
+            
+            <div class="control-group">
+              <h4>Crop Shape</h4>
+              <div class="shapes-gallery">
+                <div class="shape-item active" data-shape="rectangle">
+                  <div class="shape-preview">
+                    <svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" fill="currentColor" /></svg>
+                  </div>
+                  <div class="shape-name">Rectangle</div>
+                </div>
+                <div class="shape-item" data-shape="circle">
+                  <div class="shape-preview">
+                    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="currentColor" /></svg>
+                  </div>
+                  <div class="shape-name">Circle</div>
+                </div>
+                <div class="shape-item" data-shape="rounded-square">
+                  <div class="shape-preview">
+                    <svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="5" ry="5" fill="currentColor" /></svg>
+                  </div>
+                  <div class="shape-name">Rounded</div>
+                </div>
+                <div class="shape-item" data-shape="heart">
+                  <div class="shape-preview">
+                    <svg viewBox="0 0 24 24">
+                      <path d="M12,21.35L10.55,20.03C5.4,15.36 2,12.27 2,8.5C2,5.41 4.42,3 7.5,3C9.24,3 10.91,3.81 12,5.08C13.09,3.81 14.76,3 16.5,3C19.58,3 22,5.41 22,8.5C22,12.27 18.6,15.36 13.45,20.03L12,21.35Z" fill="currentColor" />
+                    </svg>
+                  </div>
+                  <div class="shape-name">Heart</div>
+                </div>
+                <div class="shape-item" data-shape="star">
+                  <div class="shape-preview">
+                    <svg viewBox="0 0 24 24">
+                      <path d="M12,17.27L18.18,21L16.54,13.97L22,9.24L14.81,8.62L12,2L9.19,8.62L2,9.24L7.45,13.97L5.82,21L12,17.27Z" fill="currentColor" />
+                    </svg>
+                  </div>
+                  <div class="shape-name">Star</div>
+                </div>
+                <div class="shape-item" data-shape="hexagon">
+                  <div class="shape-preview">
+                    <svg viewBox="0 0 24 24">
+                      <path d="M21,16.5C21,16.88 20.79,17.21 20.47,17.38L12.57,21.82C12.41,21.94 12.21,22 12,22C11.79,22 11.59,21.94 11.43,21.82L3.53,17.38C3.21,17.21 3,16.88 3,16.5V7.5C3,7.12 3.21,6.79 3.53,6.62L11.43,2.18C11.59,2.06 11.79,2 12,2C12.21,2 12.41,2.06 12.57,2.18L20.47,6.62C20.79,6.79 21,7.12 21,7.5V16.5Z" fill="currentColor" />
+                    </svg>
+                  </div>
+                  <div class="shape-name">Hexagon</div>
+                </div>
+                <div class="shape-item" data-shape="triangle">
+                  <div class="shape-preview">
+                    <svg viewBox="0 0 24 24">
+                      <path d="M1,21H23L12,2L1,21Z" fill="currentColor" />
+                    </svg>
+                  </div>
+                  <div class="shape-name">Triangle</div>
+                </div>
+                <div class="shape-item" data-shape="diamond">
+                  <div class="shape-preview">
+                    <svg viewBox="0 0 24 24">
+                      <path d="M12,2L22,12L12,22L2,12L12,2Z" fill="currentColor" />
+                    </svg>
+                  </div>
+                  <div class="shape-name">Diamond</div>
+                </div>
+                <div class="shape-item" data-shape="pentagon">
+                  <div class="shape-preview">
+                    <svg viewBox="0 0 24 24">
+                      <path d="M12,2.5L2,9.8L5.8,21.5H18.2L22,9.8L12,2.5Z" fill="currentColor" />
+                    </svg>
+                  </div>
+                  <div class="shape-name">Pentagon</div>
+                </div>
+                <div class="shape-item" data-shape="octagon">
+                  <div class="shape-preview">
+                    <svg viewBox="0 0 24 24">
+                      <path d="M7.86,2L16.14,2L22,7.86L22,16.14L16.14,22L7.86,22L2,16.14L2,7.86L7.86,2Z" fill="currentColor" />
+                    </svg>
+                  </div>
+                  <div class="shape-name">Octagon</div>
+                </div>
+                <div class="shape-item" data-shape="badge">
+                  <div class="shape-preview">
+                    <svg viewBox="0 0 24 24">
+                      <path d="M12,1L15.36,8.48L23,9.69L17.5,15.51L18.96,23L12,19.54L5.04,23L6.5,15.51L1,9.69L8.64,8.48L12,1Z" fill="currentColor" />
+                    </svg>
+                  </div>
+                  <div class="shape-name">Badge</div>
+                </div>
+                <div class="shape-item" data-shape="cross">
+                  <div class="shape-preview">
+                    <svg viewBox="0 0 24 24">
+                      <path d="M16,4L16,8L20,8L20,16L16,16L16,20L8,20L8,16L4,16L4,8L8,8L8,4L16,4Z" fill="currentColor" />
+                    </svg>
+                  </div>
+                  <div class="shape-name">Cross</div>
+                </div>
+                <div class="shape-item" data-shape="leaf">
+                  <div class="shape-preview">
+                    <svg viewBox="0 0 24 24">
+                      <path d="M17,8C8,10 5.9,16.17 3.82,21.34L5.71,22L6.66,19.7C7.14,19.87 7.64,20 8,20C19,20 22,3 22,3C21,5 14,7.25 9,8.23V6C9,6 16,3 22,2C22,2 19,12.5 17,8Z" fill="currentColor" />
+                    </svg>
+                  </div>
+                  <div class="shape-name">Leaf</div>
+                </div>
+                <div class="shape-item" data-shape="speech-bubble">
+                  <div class="shape-preview">
+                    <svg viewBox="0 0 24 24">
+                      <path d="M20,2H4A2,2 0 0,0 2,4V22L6,18H20A2,2 0 0,0 22,16V4A2,2 0 0,0 20,2Z" fill="currentColor" />
+                    </svg>
+                  </div>
+                  <div class="shape-name">Bubble</div>
+                </div>
+                <div class="shape-item" data-shape="thought-bubble">
+                  <div class="shape-preview">
+                    <svg viewBox="0 0 24 24">
+                      <path d="M3,7H9V13H3V7M13,7H19V13H13V7M3,3H9V5H3V3M13,3H19V5H13V3M3,15H9V17H3V15M13,15H19V17H13V15M3,19H9V21H3V19M13,19H19V21H13V19Z" fill="currentColor" />
+                    </svg>
+                  </div>
+                  <div class="shape-name">Thought</div>
+                </div>
+                <div class="shape-item" data-shape="puzzle">
+                  <div class="shape-preview">
+                    <svg viewBox="0 0 24 24">
+                      <path d="M20.5,11H19V7C19,5.89 18.1,5 17,5H13V3.5A2.5,2.5 0 0,0 10.5,1A2.5,2.5 0 0,0 8,3.5V5H4A2,2 0 0,0 2,7V10.8H3.5C5,10.8 6.2,12 6.2,13.5C6.2,15 5,16.2 3.5,16.2H2V20A2,2 0 0,0 4,22H7.8V20.5C7.8,19 9,17.8 10.5,17.8C12,17.8 13.2,19 13.2,20.5V22H17A2,2 0 0,0 19,20V16H20.5A2.5,2.5 0 0,0 23,13.5A2.5,2.5 0 0,0 20.5,11Z" fill="currentColor" />
+                    </svg>
+                  </div>
+                  <div class="shape-name">Puzzle</div>
+                </div>
+                <div class="shape-item" data-shape="camera">
+                  <div class="shape-preview">
+                    <svg viewBox="0 0 24 24">
+                      <path d="M20,4H16.83L15,2H9L7.17,4H4A2,2 0 0,0 2,6V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V6A2,2 0 0,0 20,4M20,18H4V6H8.05L9.88,4H14.12L15.95,6H20V18M12,7A5,5 0 0,0 7,12A5,5 0 0,0 12,17A5,5 0 0,0 17,12A5,5 0 0,0 12,7M12,15A3,3 0 0,1 9,12A3,3 0 0,1 12,9A3,3 0 0,1 15,12A3,3 0 0,1 12,15Z" fill="currentColor" />
+                    </svg>
+                  </div>
+                  <div class="shape-name">Camera</div>
+                </div>
+                <div class="shape-item" data-shape="cloud">
+                  <div class="shape-preview">
+                    <svg viewBox="0 0 24 24">
+                      <path d="M19.35,10.03C18.67,6.59 15.64,4 12,4C9.11,4 6.6,5.64 5.35,8.03C2.34,8.36 0,10.9 0,14A6,6 0 0,0 6,20H19A5,5 0 0,0 24,15C24,12.36 21.95,10.22 19.35,10.03Z" fill="currentColor" />
+                    </svg>
+                  </div>
+                  <div class="shape-name">Cloud</div>
+                </div>
+                <div class="shape-item" data-shape="wave">
+                  <div class="shape-preview">
+                    <svg viewBox="0 0 24 24">
+                      <path d="M2,6C2.64,6.26 3.27,6.44 3.81,6.88C4.77,7.65 5,9 5,9H6C6,9 5.5,7.5 7,7.5C8.5,7.5 8,9 8,9H9C9,9 9,7 11,7C13,7 13,9 13,9H14C14,9 12.5,5 16,5C19.5,5 18,9 18,9H19C19,9 19.33,7.67 20.67,6.88C21.13,6.59 21.7,6.27 22.33,6L21.9,7.38C21.64,7.81 21.23,8.15 20.75,8.36C19.34,9 18,9 18,9H17C17,9 18,11 15,11C12,11 12,9 12,9H11C11,9 11.38,10.47 10,10.91C8.93,11.25 8,10.56 8,9H7C7,9 7,11 4.5,11C2.67,11 2.33,9 2.33,9H2V6Z" fill="currentColor" />
+                    </svg>
+                  </div>
+                  <div class="shape-name">Wave</div>
+                </div>
+                <div class="shape-item" data-shape="frame">
+                  <div class="shape-preview">
+                    <svg viewBox="0 0 24 24">
+                      <path d="M18,2H6C4.9,2 4,2.9 4,4V20C4,21.1 4.9,22 6,22H18C19.1,22 20,21.1 20,20V4C20,2.9 19.1,2 18,2M18,20H6V4H18V20M16,6H8V8H16V6M16,10H8V12H16V10M14,16H8V18H14V16Z" fill="currentColor" />
+                    </svg>
+                  </div>
+                  <div class="shape-name">Frame</div>
+                </div>
               </div>
             </div>
             
@@ -747,6 +996,7 @@ class WixImageCropper extends HTMLElement {
     const customWidth = this.shadowRoot.querySelector('#customWidth');
     const customHeight = this.shadowRoot.querySelector('#customHeight');
     const applyCustomRatio = this.shadowRoot.querySelector('#applyCustomRatio');
+    const shapeItems = this.shadowRoot.querySelectorAll('.shape-item');
     
     // Advanced resize elements
     const toggleAdvancedResize = this.shadowRoot.querySelector('.toggle-advanced-resize');
@@ -906,6 +1156,17 @@ class WixImageCropper extends HTMLElement {
       this.saturation = parseInt(saturationSlider.value);
       this.shadowRoot.querySelector('#saturationValue').textContent = `${saturationSlider.value}%`;
       this.renderImage();
+    });
+    
+    // Shape selection
+    shapeItems.forEach(item => {
+      item.addEventListener('click', () => {
+        shapeItems.forEach(i => i.classList.remove('active'));
+        item.classList.add('active');
+        
+        const shape = item.getAttribute('data-shape');
+        this.setShape(shape);
+      });
     });
     
     // Advanced resize events
@@ -1228,6 +1489,18 @@ class WixImageCropper extends HTMLElement {
       });
     }
     
+    // Apply initial shape if specified
+    const defaultShape = this.getAttribute('defaultShape') || 'rectangle';
+    if (defaultShape !== 'rectangle') {
+      this.setShape(defaultShape);
+      
+      // Update shape button UI
+      const shapeItems = this.shadowRoot.querySelectorAll('.shape-item');
+      shapeItems.forEach(item => {
+        item.classList.toggle('active', item.getAttribute('data-shape') === defaultShape);
+      });
+    }
+    
     // Set initial output dimensions to match the crop box
     const outputWidth = this.shadowRoot.querySelector('#outputWidth');
     const outputHeight = this.shadowRoot.querySelector('#outputHeight');
@@ -1501,7 +1774,305 @@ class WixImageCropper extends HTMLElement {
       cropBoxEl.style.top = `${offsetTop + this.cropBox.y}px`;
       cropBoxEl.style.width = `${this.cropBox.width}px`;
       cropBoxEl.style.height = `${this.cropBox.height}px`;
+      
+      // Update shape mask if it's a custom shape
+      if (this.currentShape !== 'rectangle') {
+        this.updateShapeMask();
+      }
     }
+  }
+  
+  /**
+   * Sets the crop shape and updates the UI
+   */
+  setShape(shape) {
+    this.currentShape = shape;
+    
+    const cropBox = this.shadowRoot.querySelector('.crop-box');
+    
+    // Remove all existing shape classes
+    cropBox.classList.remove('rectangle', 'circle', 'rounded-square', 'rounded-rectangle', 'custom-shape');
+    
+    // Add the appropriate class or generate SVG mask
+    if (['circle', 'rounded-square', 'rounded-rectangle'].includes(shape)) {
+      cropBox.classList.add(shape);
+    } else if (shape !== 'rectangle') {
+      cropBox.classList.add('custom-shape');
+      this.updateShapeMask();
+    }
+    
+    // If it's a circle, make sure the aspect ratio is 1:1
+    if (shape === 'circle') {
+      // Set aspect ratio to 1:1
+      const aspectButtons = this.shadowRoot.querySelectorAll('[data-aspect]');
+      aspectButtons.forEach(btn => {
+        btn.classList.toggle('active', btn.getAttribute('data-aspect') === '1:1');
+      });
+      this.setAspectRatio('1:1');
+    }
+  }
+  
+  /**
+   * Updates the SVG shape mask based on the current shape selection
+   */
+  updateShapeMask() {
+    const shapeMask = this.shadowRoot.querySelector('.shape-mask');
+    if (!shapeMask) return;
+    
+    // Clear existing content
+    shapeMask.innerHTML = '';
+    
+    // If it's a basic shape handled by CSS, don't add SVG
+    if (['rectangle', 'circle', 'rounded-square', 'rounded-rectangle'].includes(this.currentShape)) {
+      return;
+    }
+    
+    const width = this.cropBox.width;
+    const height = this.cropBox.height;
+    
+    // Create SVG element
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('width', '100%');
+    svg.setAttribute('height', '100%');
+    svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+    svg.style.position = 'absolute';
+    svg.style.top = '0';
+    svg.style.left = '0';
+    svg.style.pointerEvents = 'none';
+    
+    // Add path or shape based on the selected shape
+    let path;
+    
+    switch (this.currentShape) {
+      case 'heart':
+        path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', `M${width/2},${height*0.15} C${width*0.2},${height*-0.1} ${width*-0.3},${height*0.4} ${width/2},${height*0.85} C${width*1.3},${height*0.4} ${width*0.8},${height*-0.1} ${width/2},${height*0.15} Z`);
+        break;
+      case 'star':
+        // 5-point star
+        const outerRadius = Math.min(width, height) / 2;
+        const innerRadius = outerRadius * 0.4;
+        const centerX = width / 2;
+        const centerY = height / 2;
+        let points = '';
+        
+        for (let i = 0; i < 10; i++) {
+          const radius = i % 2 === 0 ? outerRadius : innerRadius;
+          const angle = Math.PI * i / 5 - Math.PI / 2;
+          const x = centerX + radius * Math.cos(angle);
+          const y = centerY + radius * Math.sin(angle);
+          points += `${x},${y} `;
+        }
+        
+        path = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        path.setAttribute('points', points);
+        break;
+      case 'hexagon':
+        path = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        const hexRadius = Math.min(width, height) / 2;
+        let hexPoints = '';
+        
+        for (let i = 0; i < 6; i++) {
+          const angle = 2 * Math.PI / 6 * i;
+          const x = width / 2 + hexRadius * Math.cos(angle);
+          const y = height / 2 + hexRadius * Math.sin(angle);
+          hexPoints += `${x},${y} `;
+        }
+        
+        path.setAttribute('points', hexPoints);
+        break;
+      case 'triangle':
+        path = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        path.setAttribute('points', `${width/2},0 0,${height} ${width},${height}`);
+        break;
+      case 'diamond':
+        path = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        path.setAttribute('points', `${width/2},0 ${width},${height/2} ${width/2},${height} 0,${height/2}`);
+        break;
+      case 'pentagon':
+        path = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        const pentRadius = Math.min(width, height) / 2;
+        let pentPoints = '';
+        
+        for (let i = 0; i < 5; i++) {
+          const angle = 2 * Math.PI / 5 * i - Math.PI / 2;
+          const x = width / 2 + pentRadius * Math.cos(angle);
+          const y = height / 2 + pentRadius * Math.sin(angle);
+          pentPoints += `${x},${y} `;
+        }
+        
+        path.setAttribute('points', pentPoints);
+        break;
+      case 'octagon':
+        path = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        const octRadius = Math.min(width, height) / 2;
+        let octPoints = '';
+        
+        for (let i = 0; i < 8; i++) {
+          const angle = 2 * Math.PI / 8 * i;
+          const x = width / 2 + octRadius * Math.cos(angle);
+          const y = height / 2 + octRadius * Math.sin(angle);
+          octPoints += `${x},${y} `;
+        }
+        
+        path.setAttribute('points', octPoints);
+        break;
+      // Additional shapes can be added here with their SVG path or polygon definitions
+      default:
+        // Default to a rectangle if shape is not recognized
+        path = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        path.setAttribute('x', '0');
+        path.setAttribute('y', '0');
+        path.setAttribute('width', width);
+        path.setAttribute('height', height);
+        break;
+    }
+    
+    // Set common attributes
+    path.setAttribute('fill', 'none');
+    path.setAttribute('stroke', '#0078d4');
+    path.setAttribute('stroke-width', '3');
+    
+    // Add shape to SVG
+    svg.appendChild(path);
+    
+    // Add SVG to mask container
+    shapeMask.appendChild(svg);
+  }
+  
+  /**
+   * Applies a clipping path to the provided context based on the shape
+   */
+  applyShapeClipPath(ctx, shape, width, height) {
+    ctx.beginPath();
+    
+    switch (shape) {
+      case 'circle':
+        const radius = Math.min(width, height) / 2;
+        ctx.arc(width / 2, height / 2, radius, 0, Math.PI * 2);
+        break;
+      case 'rounded-square':
+        const cornerRadius = Math.min(width, height) * 0.15;
+        ctx.moveTo(cornerRadius, 0);
+        ctx.lineTo(width - cornerRadius, 0);
+        ctx.arcTo(width, 0, width, cornerRadius, cornerRadius);
+        ctx.lineTo(width, height - cornerRadius);
+        ctx.arcTo(width, height, width - cornerRadius, height, cornerRadius);
+        ctx.lineTo(cornerRadius, height);
+        ctx.arcTo(0, height, 0, height - cornerRadius, cornerRadius);
+        ctx.lineTo(0, cornerRadius);
+        ctx.arcTo(0, 0, cornerRadius, 0, cornerRadius);
+        break;
+      case 'rounded-rectangle':
+        const rectCornerRadius = Math.min(width, height) * 0.1;
+        ctx.moveTo(rectCornerRadius, 0);
+        ctx.lineTo(width - rectCornerRadius, 0);
+        ctx.arcTo(width, 0, width, rectCornerRadius, rectCornerRadius);
+        ctx.lineTo(width, height - rectCornerRadius);
+        ctx.arcTo(width, height, width - rectCornerRadius, height, rectCornerRadius);
+        ctx.lineTo(rectCornerRadius, height);
+        ctx.arcTo(0, height, 0, height - rectCornerRadius, rectCornerRadius);
+        ctx.lineTo(0, rectCornerRadius);
+        ctx.arcTo(0, 0, rectCornerRadius, 0, rectCornerRadius);
+        break;
+      case 'heart':
+        // Heart shape
+        ctx.moveTo(width / 2, height * 0.15);
+        ctx.bezierCurveTo(width * 0.2, height * -0.1, width * -0.3, height * 0.4, width / 2, height * 0.85);
+        ctx.bezierCurveTo(width * 1.3, height * 0.4, width * 0.8, height * -0.1, width / 2, height * 0.15);
+        break;
+      case 'star':
+        // 5-point star
+        const outerRadius = Math.min(width, height) / 2;
+        const innerRadius = outerRadius * 0.4;
+        const centerX = width / 2;
+        const centerY = height / 2;
+        
+        for (let i = 0; i < 10; i++) {
+          const radius = i % 2 === 0 ? outerRadius : innerRadius;
+          const angle = Math.PI * i / 5 - Math.PI / 2;
+          const x = centerX + radius * Math.cos(angle);
+          const y = centerY + radius * Math.sin(angle);
+          
+          if (i === 0) {
+            ctx.moveTo(x, y);
+          } else {
+            ctx.lineTo(x, y);
+          }
+        }
+        ctx.closePath();
+        break;
+      case 'hexagon':
+        const hexRadius = Math.min(width, height) / 2;
+        
+        for (let i = 0; i < 6; i++) {
+          const angle = 2 * Math.PI / 6 * i;
+          const x = width / 2 + hexRadius * Math.cos(angle);
+          const y = height / 2 + hexRadius * Math.sin(angle);
+          
+          if (i === 0) {
+            ctx.moveTo(x, y);
+          } else {
+            ctx.lineTo(x, y);
+          }
+        }
+        ctx.closePath();
+        break;
+      case 'triangle':
+        ctx.moveTo(width / 2, 0);
+        ctx.lineTo(0, height);
+        ctx.lineTo(width, height);
+        ctx.closePath();
+        break;
+      case 'diamond':
+        ctx.moveTo(width / 2, 0);
+        ctx.lineTo(width, height / 2);
+        ctx.lineTo(width / 2, height);
+        ctx.lineTo(0, height / 2);
+        ctx.closePath();
+        break;
+      case 'pentagon':
+        const pentRadius = Math.min(width, height) / 2;
+        
+        for (let i = 0; i < 5; i++) {
+          const angle = 2 * Math.PI / 5 * i - Math.PI / 2;
+          const x = width / 2 + pentRadius * Math.cos(angle);
+          const y = height / 2 + pentRadius * Math.sin(angle);
+          
+          if (i === 0) {
+            ctx.moveTo(x, y);
+          } else {
+            ctx.lineTo(x, y);
+          }
+        }
+        ctx.closePath();
+        break;
+      case 'octagon':
+        const octRadius = Math.min(width, height) / 2;
+        
+        for (let i = 0; i < 8; i++) {
+          const angle = 2 * Math.PI / 8 * i;
+          const x = width / 2 + octRadius * Math.cos(angle);
+          const y = height / 2 + octRadius * Math.sin(angle);
+          
+          if (i === 0) {
+            ctx.moveTo(x, y);
+          } else {
+            ctx.lineTo(x, y);
+          }
+        }
+        ctx.closePath();
+        break;
+      // Add more shape cases here as needed
+      default:
+        // Default rectangle shape
+        ctx.rect(0, 0, width, height);
+        break;
+    }
+    
+    // Apply the clip path
+    ctx.clip();
+    ctx.save();
   }
 
   setAspectRatio(aspect) {
@@ -1851,36 +2422,53 @@ class WixImageCropper extends HTMLElement {
     // Get the source canvas
     const sourceCanvas = this.shadowRoot.querySelector('#cropCanvas');
     
+    // First create a temporary canvas with the cropped area
+    const tempCanvas = document.createElement('canvas');
+    const tempCtx = tempCanvas.getContext('2d');
+    
+    tempCanvas.width = this.cropBox.width;
+    tempCanvas.height = this.cropBox.height;
+    
+    // Draw the cropped portion to the temp canvas
+    tempCtx.drawImage(
+      sourceCanvas,
+      this.cropBox.x, this.cropBox.y, this.cropBox.width, this.cropBox.height,
+      0, 0, this.cropBox.width, this.cropBox.height
+    );
+    
+    // If using a custom shape, apply the clipping mask
+    if (this.currentShape !== 'rectangle') {
+      // Create another temp canvas for the shape masking
+      const maskedCanvas = document.createElement('canvas');
+      const maskedCtx = maskedCanvas.getContext('2d');
+      
+      maskedCanvas.width = this.cropBox.width;
+      maskedCanvas.height = this.cropBox.height;
+      
+      // Apply the shape clipping path
+      this.applyShapeClipPath(maskedCtx, this.currentShape, this.cropBox.width, this.cropBox.height);
+      
+      // Draw the cropped image using the clipping path
+      maskedCtx.drawImage(tempCanvas, 0, 0);
+      
+      // Use the masked canvas for the final resize
+      tempCanvas.width = maskedCanvas.width;
+      tempCanvas.height = maskedCanvas.height;
+      tempCtx.drawImage(maskedCanvas, 0, 0);
+    }
+    
     // Apply high-quality resize algorithm if specified
     if (this.resizeQuality === 'high' && 
         (outputWidth !== this.cropBox.width || outputHeight !== this.cropBox.height)) {
-      // Create a temporary canvas for the cropped portion
-      const tempCanvas = document.createElement('canvas');
-      const tempCtx = tempCanvas.getContext('2d');
-      
-      tempCanvas.width = this.cropBox.width;
-      tempCanvas.height = this.cropBox.height;
-      
-      // Draw the cropped portion to the temp canvas
-      tempCtx.drawImage(
-        sourceCanvas,
-        this.cropBox.x, this.cropBox.y, this.cropBox.width, this.cropBox.height,
-        0, 0, this.cropBox.width, this.cropBox.height
-      );
-      
-      // Apply high-quality resizing
+      // Apply high-quality resizing to the already cropped (and potentially masked) image
       this.highQualityResize(tempCanvas, croppedCanvas);
     } else {
       // Standard resize (medium/low quality)
       ctx.imageSmoothingEnabled = this.resizeQuality !== 'low';
       ctx.imageSmoothingQuality = this.resizeQuality === 'medium' ? 'medium' : 'low';
       
-      // Draw the cropped portion with resizing
-      ctx.drawImage(
-        sourceCanvas,
-        this.cropBox.x, this.cropBox.y, this.cropBox.width, this.cropBox.height,
-        0, 0, outputWidth, outputHeight
-      );
+      // Draw the prepared image with resizing
+      ctx.drawImage(tempCanvas, 0, 0, outputWidth, outputHeight);
     }
     
     // Show visual feedback - flash the crop area
@@ -2095,6 +2683,7 @@ class WixImageCropper extends HTMLElement {
     this.contrast = 100;
     this.saturation = 100;
     this.currentAspectRatio = null;
+    this.currentShape = 'rectangle';
     
     // Reset advanced resize options
     this.outputWidth = null;
@@ -2124,6 +2713,18 @@ class WixImageCropper extends HTMLElement {
     aspectButtons.forEach(btn => {
       btn.classList.toggle('active', btn.getAttribute('data-aspect') === 'free');
     });
+    
+    // Reset shape buttons
+    const shapeItems = this.shadowRoot.querySelectorAll('.shape-item');
+    shapeItems.forEach(item => {
+      item.classList.toggle('active', item.getAttribute('data-shape') === 'rectangle');
+    });
+    
+    // Reset crop box classes and SVG shape mask
+    const cropBox = this.shadowRoot.querySelector('.crop-box');
+    cropBox.className = 'crop-box';
+    const shapeMask = this.shadowRoot.querySelector('.shape-mask');
+    shapeMask.innerHTML = '';
     
     // Reset advanced resize controls
     this.shadowRoot.querySelector('#outputWidth').value = '';
